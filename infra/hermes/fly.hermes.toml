@@ -1,0 +1,69 @@
+# Hermes 常駐 gateway 的 Fly 設定(獨立 app `shopfloor-cmms-hermes`,同 org 同私網,sin region)。
+# ADR-020 / ADR-019 Hermes 沙箱。IaC 在 infra/hermes/(Dockerfile + entrypoint.sh + gateway)。
+# operator 步驟(apps create → volume → secret → deploy → codex login → 驗證)見
+# ../../docs/部署 runbook「階段 1i」。
+#
+# 部署:在 infra/hermes/ 下跑 `flyctl deploy -c fly.hermes.toml`。
+# 初次需設 secret(值不入 git,見 ../secrets-manifest.md):
+#   flyctl secrets set -a shopfloor-cmms-hermes HERMES_GATEWAY_SECRET="<32-byte urlsafe>"
+#   # 同一把 secret 也要設在 cmms app(shopfloor-cmms),dock 接線時 cmms 用它打本 gateway。
+
+app = "shopfloor-cmms-hermes"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # ★ 2026-07-08 延遲優化 B 已試、已退回:改 http://shopfloor-cmms.internal:8080/mcp 私網直連
+  #   後,codex 掛不上 MCP(dock 回「沒有可用的 CMMS 查詢工具」)—— 疑 codex 對遠端 MCP
+  #   拒純 http、或 MCP SDK host 防護;**勿再直接改回私網 http**,除非先在 hermes machine 上
+  #   curl 驗證 + 查 codex 對非 TLS remote MCP 的支援。公網 URL 每次工具呼叫多繞邊緣一趟,
+  #   可接受(優化 A 常駐才是大頭)。
+  CMMS_MCP_URL = "https://cmms.example.com/mcp"
+  # ★ 2026-07-13 歸因更新:實測公網 /mcp 只 23ms、MCP 握手僅 ~0.3s —— 私網化與「codex
+  #   常駐」都不值得做。延遲 ≈ 模型推理 × 趟數(工具問題跑兩趟)→ 模型速度是唯一有效
+  #   槓桿。/chat 模型可用 HERMES_MODEL 覆寫(選填;未設 = codex 預設 gpt-5.5):
+  #   A/B 免重 build —— `flyctl secrets set -a shopfloor-cmms-hermes HERMES_MODEL=gpt-5.4-mini`
+  #   (滾動重啟即生效)、`flyctl secrets unset` 還原;/mrq-description 恆用預設(品質優先)。
+  # HERMES_MODEL = "gpt-5.4-mini"
+  CODEX_HOME = "/data/codex"
+  HERMES_CODEX_TIMEOUT = "180"
+  HERMES_MAX_CONCURRENCY = "2"
+
+# OAuth 憑證(codex login)+ codex config/快取持久化。volume 名 hermes_data → /data。
+# 先 `flyctl volumes create hermes_data -a shopfloor-cmms-hermes -r sin -s 1`(見部署 runbook）。
+[mounts]
+  source = "hermes_data"
+  destination = "/data"
+
+# ── internal-only(ADR-019 Hermes 沙箱)──────────────────────────────────────
+# 本 app **不對公網開放**。隱私的真正保證 = **無公網 IP**:
+#   ★ `flyctl deploy` 首次部署會**自動配公網 v4/v6**(新版 flyctl 見 [[services]] 即送)——
+#     部署後必跑 `flyctl ips list`,把 public 位址全 `flyctl ips release <ip>` 掉,
+#     只留 private v6(2026-07-05 實戰教訓)。
+# cmms app 經 Fly 私網以 flycast 位址打:
+#     http://shopfloor-cmms-hermes.flycast:8080/chat        (帶 X-Hermes-Secret)
+# flycast = 私網 L4 負載平衡 + auto start/stop;需一次性配「私有」v6(非公網):
+#     flyctl ips allocate-v6 --private -a shopfloor-cmms-hermes
+# ★ [[services.ports]] 是 **flycast 路由的必要對映**(proxy 靠它知道 8080 → internal_port;
+#   沒有它 = 連私網 flycast 都 connection reset,2026-07-05 實戰教訓)。無 handlers = raw TCP;
+#   「有 ports 條目」不等於公網開放 —— 公網開放與否由「有無 public IP」決定(見上)。
+#
+# 替代做法(更簡、無 auto start/stop、DNS 只解析運行中 machine):純 6PN 直連
+#     http://shopfloor-cmms-hermes.internal:8080          （刪掉整段 [[services]] 即可）
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  # ★ 常駐一台(2026-07-08 延遲優化 A):原 0 = 閒置全停,dock 第一句要等機器冷啟動
+  #   數秒。shared-1x/512MB 常開約 US$3–4/月,換掉最有感的首句延遲。
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 8080
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

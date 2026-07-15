@@ -1,0 +1,27 @@
+{# ---- 泛用多關鍵字 combobox(原 efc_combobox 泛化)----
+   空格分隔關鍵字 AND、吃 (code + 人話描述)、下拉顯示人話存 code;最終值必為清單成員或空
+   (失焦未選取的自由文字還原,不鑄假碼/假值)。漸進增強:無 JS 退回原生 <datalist>。
+   options = dict list;每筆至少 {"c": code},選填 "d"(人話描述)、"u"(true=曾用)。
+   add_url(選填,admin)→ 下拉末端出現「新增此值」快捷,POST 到該端點即建即選。
+   參數:
+     name        input 的 name(送出的欄位名)
+     value       既有值(或空)
+     options     dict list(見上)
+     t           i18n 函式
+     dom_id      實例唯一後綴(同頁多個 combobox 用不同值)
+     wrap_style  容器 inline style
+     placeholder / nomatch / used_label  文案(呼叫端傳 t(...))
+     add_url / add_label  admin quick-add(端點 + 按鈕文字);空 = 不啟用 #}
+{% macro combobox(name, value, options, t, dom_id, wrap_style="", placeholder="", nomatch="", used_label="", add_url="", add_label="") %}
+<div class="efc-combo" data-efc-combo
+     data-nomatch="{{ nomatch }}"
+     {% if used_label %}data-used="{{ used_label }}"{% endif %}
+     {% if add_url %}data-add-url="{{ add_url }}" data-add-label="{{ add_label }}"{% endif %}
+     {% if wrap_style %}style="{{ wrap_style }}"{% endif %}>
+  <input name="{{ name }}" class="mono efc-combo-input" autocomplete="off"
+         list="cb-list-{{ name }}-{{ dom_id }}" value="{{ value or '' }}"
+         placeholder="{{ placeholder }}">
+  <datalist id="cb-list-{{ name }}-{{ dom_id }}">{% for o in options %}<option value="{{ o.c }}"{% if o.d %} label="{{ o.d }}"{% endif %}>{% endfor %}</datalist>
+  <script type="application/json" class="efc-combo-data">{{ options | tojson }}</script>
+</div>
+{% endmacro %}

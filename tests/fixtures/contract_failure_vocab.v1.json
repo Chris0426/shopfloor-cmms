@@ -1,0 +1,56 @@
+{
+  "mes_failmodes": [
+    {
+      "station": "sta1",
+      "label": "OPEN_CIRCUIT",
+      "signal_id": "mes.failmode.open_circuit",
+      "entry_kind": "fail_flag",
+      "seg_class": "sta1ModuleSeg",
+      "mes_variable": "mfcOpenCircuit",
+      "material_class": "assyModule",
+      "semantic_zh": "開路（無訊號）",
+      "dominant_in_chronic": "y3",
+      "is_active": true
+    },
+    {
+      "station": "sta1",
+      "label": "triage_A",
+      "signal_id": null,
+      "entry_kind": "triage_category",
+      "seg_class": null,
+      "mes_variable": null,
+      "material_class": "assyModule",
+      "semantic_zh": "三分流大類 A",
+      "dominant_in_chronic": "n",
+      "is_active": true
+    },
+    {
+      "station": "sta3",
+      "label": "SensorFail",
+      "signal_id": "mes.failmode.sensorfail",
+      "entry_kind": "fail_flag",
+      "seg_class": "sta3PanelSeg",
+      "mes_variable": "mfcSensorFail",
+      "material_class": "assyModule",
+      "semantic_zh": "感測器失效（已退役）",
+      "dominant_in_chronic": "n",
+      "is_active": false
+    }
+  ],
+  "equipment_failure_codes": [
+    {
+      "code": "efcSTA7_AirPressure",
+      "descr": "STA7 air pressure out of range",
+      "station_hint": "sta7",
+      "recency_status": "source_alive_2026-07",
+      "is_active": true
+    },
+    {
+      "code": "efcSA1_TcpComms",
+      "descr": "SA1 PLC TCP comms fault",
+      "station_hint": null,
+      "recency_status": "source_alive_2026-07",
+      "is_active": true
+    }
+  ]
+}

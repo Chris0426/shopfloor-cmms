@@ -1,0 +1,16 @@
+{# phase 1 回應(POST /app/assistant):beforeend 進 #assistant-conv。
+   ① user 泡泡(autoescape,天然防注入)② pending 觸發器(三點動畫,同時 hx-trigger=load
+   觸發 phase 2 打 gateway;hx-disabled-elt 讓 in-flight 時送出鈕禁用,防同會話並發輪次交錯)
+   ③ OOB 重渲染切換列(新會話 is-current)—— 修「新會話標籤不出現」
+   ④ OOB 更新 hidden conversation_id(後續訊息接續同對話)。 #}
+<div class="chat-msg chat-msg--user">{{ user_content }}</div>
+<div class="chat-msg chat-msg--pending" data-assistant-pending
+     hx-post="/app/assistant/{{ conversation_id }}/reply"
+     hx-vals='{"message_id": {{ message_id }}}'
+     hx-trigger="load" hx-swap="outerHTML"
+     hx-disabled-elt="#assistant-form button">
+  <span></span><span></span><span></span>
+</div>
+{% include "partials/assistant_sessions.html" %}
+<input type="hidden" id="assistant-conv-id" name="conversation_id"
+       value="{{ conversation_id }}" hx-swap-oob="true">

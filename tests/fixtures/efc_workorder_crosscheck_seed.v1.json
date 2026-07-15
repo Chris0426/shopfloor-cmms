@@ -1,0 +1,84 @@
+{
+  "schema_id": "efc_workorder_crosscheck_seed.v1",
+  "generated_at": "2026-07-01T00:00:00Z",
+  "method": {
+    "events_file": "synthetic_efc_events.csv",
+    "buffer_days": 1,
+    "as_of": "2026-07-01T00:00:00Z",
+    "n_rows_skipped": 0,
+    "wo_scope": "REACTIVE, non-cancelled/non-void; §24: existence+time-window only, no personnel fields",
+    "granularity_note": "historical WOs carry day+default-time granularity; day-level buffer applied; ratios are indicative, not minute-precise",
+    "verdict_rules": {
+      "nuisance": "n_events_total_checked >= 100 and ratio <= 0.02",
+      "real_fault": "n_events_matched >= 3 and ratio >= 0.30",
+      "insufficient_data": "otherwise"
+    }
+  },
+  "codes": [
+    {
+      "code": "efcNuisance",
+      "n_events_total_checked": 100,
+      "n_events_matched": 1,
+      "n_events_unknown_eid": 0,
+      "ratio": 0.01,
+      "verdict_hint": "nuisance",
+      "evidence": {
+        "eids_seen": [
+          "EID-002"
+        ],
+        "eids_seen_truncated": false,
+        "event_period": {
+          "first": "2026-06-01T00:00:00Z",
+          "last": "2026-06-15T11:00:00Z"
+        },
+        "matched_work_orders": [
+          2001
+        ],
+        "matched_work_orders_truncated": false
+      }
+    },
+    {
+      "code": "efcReal_Fault",
+      "n_events_total_checked": 5,
+      "n_events_matched": 5,
+      "n_events_unknown_eid": 0,
+      "ratio": 1.0,
+      "verdict_hint": "real_fault",
+      "evidence": {
+        "eids_seen": [
+          "EID-001"
+        ],
+        "eids_seen_truncated": false,
+        "event_period": {
+          "first": "2026-06-20T10:00:00Z",
+          "last": "2026-06-20T14:00:00Z"
+        },
+        "matched_work_orders": [
+          1001
+        ],
+        "matched_work_orders_truncated": false
+      }
+    },
+    {
+      "code": "efcSparse",
+      "n_events_total_checked": 2,
+      "n_events_matched": 0,
+      "n_events_unknown_eid": 1,
+      "ratio": 0.0,
+      "verdict_hint": "insufficient_data",
+      "evidence": {
+        "eids_seen": [
+          "EID-003",
+          "EID-999"
+        ],
+        "eids_seen_truncated": false,
+        "event_period": {
+          "first": "2026-06-25T08:00:00Z",
+          "last": "2026-06-26T08:00:00Z"
+        },
+        "matched_work_orders": [],
+        "matched_work_orders_truncated": false
+      }
+    }
+  ]
+}

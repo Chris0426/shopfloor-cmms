@@ -1,0 +1,53 @@
+{# 工單佇列結果區塊(整頁 include + HTMX 即時過濾都渲染這份,單一真相;
+   chips 一併在 swap 範圍內,過濾後的 q 不會過期) #}
+<div class="filters">
+  {% for key, label in [('mine','scope.mine'), ('all','scope.all')] %}
+  <a class="chip {{ 'is-active' if scope == key else '' }}"
+     href="/app/work-orders?scope={{ key }}&tab={{ tab }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ t(label) }}</a>
+  {% endfor %}
+</div>
+
+{# 分類 chips(Jordan 2026-07-05 #3d):活單(預設)+ 細分(處理中/等待)+ 已結 + 已取消 + 全部 #}
+<div class="filters">
+  {% for key, label in [('active','wo.filter.active'), ('inprogress','wo.filter.inprogress'), ('waiting','wo.filter.waiting'), ('done','wo.filter.done'), ('cancelled','wo.filter.cancelled'), ('all','wo.filter.all')] %}
+  <a class="chip {{ 'is-active' if tab == key else '' }}"
+     href="/app/work-orders?scope={{ scope }}&tab={{ key }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ t(label) }}</a>
+  {% endfor %}
+</div>
+{% if work_orders %}
+<div class="wo-list">
+  {% for wo in work_orders %}
+  {% set css = status_css(wo.status) %}
+  <a class="wo-card wo-card--{{ css }}" href="/app/work-orders/{{ wo.work_order_no }}">
+    <div class="wo-card__top">
+      <span class="wo-no">WO-{{ wo.work_order_no }}</span>
+      <span style="display:flex;gap:6px;align-items:center;flex:0 0 auto;">
+        <span class="badge badge--{{ wtype_css(wo.work_type) }}">{{ wo.work_type }}</span>
+        <span class="badge badge--{{ css }}">{{ t(wo_status_key(wo.status, wo.work_type)) }}</span>
+        {% if wo.status == "ON_HOLD" and wo.hold_reason %}
+        <span class="badge badge--hold">{{ t("holdreason." ~ wo.hold_reason) }}</span>
+        {% endif %}
+      </span>
+    </div>
+    <p class="wo-title">{{ wo.brief_description or "—" }}</p>
+    {% set aname = asset_names.get(wo.asset_id) if asset_names else None %}
+    {% set anames = assignee_names.get(wo.work_order_no) if assignee_names else None %}
+    <p class="wo-meta">{{ wo.asset_id }}{% if aname %} · {{ aname }}{% endif %} · {{ t("wo.owner") }} {{ anames|join("、") if anames else (wo.assigned_person or wo.assigned_vendor or t("wo.unassigned")) }}</p>
+    {% if wo.downtime_minutes %}
+    <div class="downtime">
+      <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7.5 12 12 15 14"/></svg>
+      {{ t("wo.down") }} {{ wo.downtime_minutes // 60 }}h{{ "%02d"|format(wo.downtime_minutes % 60) }}m
+    </div>
+    {% endif %}
+    <p class="wo-sub">{{ wo.opened_date }} · {{ t("wo.opened") }}</p>
+  </a>
+  {% endfor %}
+</div>
+{% elif scope == 'mine' %}
+<p class="empty">{{ t("scope.empty") }}
+  <a href="/app/work-orders?scope=all{% if tab and tab != 'all' %}&tab={{ tab }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ t("scope.all") }} →</a>
+</p>
+{% else %}
+<p class="empty">{{ t("wo.empty") }}</p>
+{% endif %}
+{% include "partials/pager.html" %}

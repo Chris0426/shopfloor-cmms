@@ -1,0 +1,60 @@
+{% extends "admin_base.html" %}
+{% block content %}
+{% if err %}<div class="adm-banner">{{ err }}</div>{% endif %}
+<div class="adm-head">
+  <h2>{{ t("admin.accounts.title") }}</h2>
+  <a class="btn-submit" href="/admin/accounts/new" style="width:auto;padding:8px 14px;text-decoration:none;">+ {{ t("admin.accounts.new") }}</a>
+</div>
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.field.username") }}</th>
+      <th>{{ t("admin.field.name") }}</th>
+      <th>{{ t("admin.field.org") }}</th>
+      <th>{{ t("admin.field.role") }}</th>
+      <th>{{ t("admin.field.status") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td class="mono">{{ u.username }}</td>
+      <td>{{ u.display_name }}</td>
+      <td>{{ u.org }}</td>
+      <td>
+        <form method="post" action="/admin/accounts/{{ u.user_id }}/role" style="margin:0;">
+          <select name="role" onchange="this.form.submit()">
+            <option value="engineer" {{ 'selected' if u.role == 'engineer' else '' }}>{{ t("admin.role.engineer") }}</option>
+            <option value="operator" {{ 'selected' if u.role == 'operator' else '' }}>{{ t("admin.role.operator") }}</option>
+            <option value="admin" {{ 'selected' if u.role == 'admin' else '' }}>{{ t("admin.role.admin") }}</option>
+          </select>
+        </form>
+      </td>
+      <td>
+        {% if u.is_active %}<span class="badge badge--done">{{ t("admin.status.active") }}</span>
+        {% else %}<span class="badge badge--muted">{{ t("admin.status.inactive") }}</span>{% endif %}
+      </td>
+      <td>
+        <div class="adm-actions">
+          {% if u.is_active %}
+          <form method="post" action="/admin/accounts/{{ u.user_id }}/deactivate"><button type="submit">{{ t("admin.action.deactivate") }}</button></form>
+          {% else %}
+          <form method="post" action="/admin/accounts/{{ u.user_id }}/activate"><button type="submit">{{ t("admin.action.activate") }}</button></form>
+          {% endif %}
+          <form method="post" action="/admin/accounts/{{ u.user_id }}/assignee">
+            <input name="assignee" value="{{ u.emaint_assignee or '' }}" placeholder="{{ t('admin.field.assignee') }}" size="12"
+                   data-suggest="person" autocomplete="off">
+            <button type="submit">{{ t("admin.action.save") }}</button>
+          </form>
+          <form method="post" action="/admin/accounts/{{ u.user_id }}/reset-password">
+            <input name="new_password" type="password" placeholder="{{ t('admin.action.newpw') }}" size="10">
+            <button type="submit">{{ t("admin.action.resetpw") }}</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "admin_base.html" %}
+{% block content %}
+<div class="adm-head"><h2>{{ t("admin.create.title") }}</h2></div>
+{% if error %}<div class="adm-banner">{{ error }}</div>{% endif %}
+<form method="post" action="/admin/accounts" class="adm-form">
+  <label>{{ t("admin.field.username") }}</label>
+  <input name="username" required autofocus>
+  <label>{{ t("admin.field.name") }}</label>
+  <input name="display_name" required>
+  <label>{{ t("admin.field.org") }}</label>
+  <select name="org"><option value="plant">plant</option><option value="contractor">contractor</option></select>
+  <label>{{ t("admin.field.role") }}</label>
+  <select name="role"><option value="engineer">{{ t("admin.role.engineer") }}</option><option value="operator">{{ t("admin.role.operator") }}</option><option value="admin">{{ t("admin.role.admin") }}</option></select>
+  <label>{{ t("admin.field.password") }}</label>
+  <input name="password" type="password" required>
+  <label>{{ t("admin.field.assignee") }}</label>
+  <input name="emaint_assignee" placeholder="e.g. Alice Fang">
+  <div style="margin-top:18px;"><button type="submit" class="btn-submit">{{ t("admin.create.submit") }}</button></div>
+</form>
+{% endblock %}

@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# Environment and secrets — values never enter git.
+.env
+.env.*
+*.env
+!.env.example
+*.secret
+
+# Generated demo data (see scripts/generate_demo_data.py)
+data/demo/
+
+# Never commit real plant data. This repo ships synthetic data only.
+data/raw/
+data/media/
+
+# DB / backup scratch
+*.dump
+*.sql.gz
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Claude Code local overrides
+.claude/settings.local.json
+AGENTS.md

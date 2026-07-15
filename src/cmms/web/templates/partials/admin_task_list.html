@@ -1,0 +1,20 @@
+{# 保養任務清單區塊(整頁 include + HTMX 即時過濾共用) #}
+{% if tasks %}
+<table class="adm-table">
+  <thead><tr><th>{{ t("admin.pm.task") }}</th><th>{{ t("admin.pm.desc") }}</th><th>{{ t("admin.field.status") }}</th></tr></thead>
+  <tbody>
+    {% for tk in tasks %}
+    <tr>
+      <td class="mono"><a href="/admin/pm/{{ tk.task_no }}">{{ tk.task_no }}</a></td>
+      <td>{{ tk.description }}</td>
+      <td>
+        {% if tk.is_active %}<span class="badge badge--done">{{ t("admin.status.active") }}</span>
+        {% else %}<span class="badge badge--muted">{{ t("admin.status.inactive") }}</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{{ t("admin.pm.empty") }}</p>
+{% endif %}

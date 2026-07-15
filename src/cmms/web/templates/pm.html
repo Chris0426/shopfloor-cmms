@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.pm") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.pm") }}{% endblock %}
+{% block content %}
+{% if is_admin %}
+<p style="padding:10px 16px 0;margin:0;">
+  <a href="/admin/pm" class="btn-submit" style="display:inline-block;width:auto;padding:7px 14px;text-decoration:none;" title="{{ t('pm.create.entry.hint') }}">+ {{ t("pm.create.entry") }}</a>
+</p>
+{% endif %}
+<div class="filters">
+  <a class="chip is-active" href="/app/pm?scope={{ scope }}">{{ t("pm.view.list") }}</a>
+  <a class="chip" href="/app/pm/calendar?scope={{ scope }}">{{ t("pm.view.calendar") }}</a>
+  <a class="chip" href="/app/pm/calendar?view=week&scope={{ scope }}">{{ t("pm.view.week") }}</a>
+  <a class="chip" href="/app/pm/calendar?view=day&scope={{ scope }}">{{ t("pm.view.day") }}</a>
+</div>
+{% if focused %}
+<p class="form-hint" style="margin:4px 16px;">{{ t("pm.focus.hint") }}
+  <a href="/app/pm?scope={{ scope }}">{{ t("pm.focus.showall") }} →</a></p>
+{% else %}
+<div class="filters">
+  {% for key, label in [('mine','scope.mine'), ('all','scope.all')] %}
+  <a class="chip {{ 'is-active' if scope == key else '' }}" href="/app/pm?scope={{ key }}">{{ t(label) }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% macro backfill_button(pm) %}
+{# #5e:補開工單鈕只在「已到期(含週末提前)且本期未生成」顯示;到期自動開單由排程器負責。
+   operator 無 PM 生成/補開權(domain 亦擋)→ 隱藏(is_operator 為全域 context)#}
+{% if pm_due_by(pm.next_due_date, today) and pm.pm_id not in generated and not is_operator %}
+{# #5b:改連結至確認頁(未儲存前不成立工單、可改 owner、可取消),不再直接 POST 生成 #}
+<a class="chip pm-exec" href="/app/pm/{{ pm.pm_id }}/backfill">{{ t("pm.backfill") }}</a>
+{% endif %}
+{% endmacro %}
+
+{% if items %}
+<div class="pm-list">
+  {% for pm in items %}
+  {% set overdue = pm.next_due_date and pm.next_due_date < today %}
+  <div class="pm-card {{ 'pm-card--overdue' if overdue else '' }}">
+    {# 清單項可點入 PM 詳情(focus);詳情本身不再重複連自己 #}
+    {% if focused %}
+    <div class="pm-card__body">
+    {% else %}
+    <a class="pm-card__body" href="/app/pm?focus={{ pm.pm_id }}&scope={{ scope }}" style="text-decoration:none;color:inherit;">
+    {% endif %}
+      <div class="pm-top">
+        <span class="mono pm-id">{{ pm.pm_id }}</span>
+        {% if overdue %}<span class="badge badge--red">{{ t("pm.overdue") }}</span>{% endif %}
+      </div>
+      <p class="pm-task">{{ task_names.get(pm.task_id, pm.task_id) or "—" }}</p>
+      <p class="pm-meta">{{ pm.asset_id }} · {{ t("pm.next_due") }} {{ pm.next_due_date }}
+        {% if pm.frequency_interval %} · {{ t("pm.every") }} {{ pm.frequency_interval }} {{ pm.frequency_unit or "" }}{% endif %}
+        {% if pm.effective_assignee %} · {{ t("wo.owner") }} {{ pm.effective_assignee }}{% endif %}</p>
+    {% if focused %}</div>{% else %}</a>{% endif %}
+    {{ backfill_button(pm) }}
+  </div>
+  {% endfor %}
+</div>
+<p class="form-hint" style="margin:8px 16px;">{{ t("pm.backfill.hint") }}</p>
+
+{% if focused %}
+{# 保養細項(#5c):唯讀 —— 步驟(依序)+ 每步用料(連備品明細)+ 工項層級用料彙總。編輯留 admin #}
+<style>
+  .pm-steps { padding:0 16px 24px; }
+  .pm-step { border:1px solid var(--line); border-radius:10px; padding:8px 10px; margin-bottom:6px; }
+  .pm-step__seq { font-size:11px; color:var(--ink-faint); font-weight:600; }
+  .pm-step__desc { font-size:14px; margin:2px 0 4px; }
+  .pm-step__parts { display:flex; flex-wrap:wrap; gap:6px; }
+  .pm-sum { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+</style>
+<div class="pm-steps">
+  <p class="inv-rel-label" style="padding:0;">{{ t("pm.steps") }}</p>
+  {% if steps %}
+  {% for s in steps %}
+  <div class="pm-step">
+    {% if s.proc_seq is not none %}<span class="pm-step__seq">#{{ s.proc_seq }}</span>{% endif %}
+    <p class="pm-step__desc">{{ s.task_desc }}</p>
+    {% set parts = step_parts.get(s.id, []) %}
+    {% if parts %}
+    <div class="pm-step__parts">
+      {% for p in parts %}
+      <a class="chip mono" href="/app/inventory/{{ p.item_code }}">{{ p.item_code }}{% if p.replace_qty is not none %} ×{{ "%g"|format(p.replace_qty|float) }}{% endif %}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if part_summary %}
+  <p class="inv-rel-label" style="padding:0;margin-top:10px;">{{ t("pm.parts_summary") }}</p>
+  <div class="pm-sum">
+    {% for code, qty in part_summary.items() %}
+    <a class="chip mono" href="/app/inventory/{{ code }}">{{ code }} ×{{ "%g"|format(qty|float) }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% else %}
+  <p class="form-hint" style="padding:0;">{{ t("pm.nosteps") }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% elif scope == 'mine' %}
+<p class="empty">{{ t("scope.empty") }} <a href="/app/pm?scope=all">{{ t("scope.all") }} →</a></p>
+{% else %}
+<p class="empty">{{ t("pm.empty") }}</p>
+{% endif %}
+{% endblock %}

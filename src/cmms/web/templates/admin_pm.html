@@ -1,0 +1,28 @@
+{% extends "admin_base.html" %}
+{% block content %}
+{% if err %}<div class="adm-banner">{{ err }}</div>{% endif %}
+<div class="adm-head"><h2>{{ t("admin.pm.title") }}</h2></div>
+
+<form method="get" action="/admin/pm" class="adm-form" style="max-width:420px;padding-top:0;">
+  <input name="q" value="{{ q or '' }}" placeholder="{{ t('admin.pm.search') }}" autofocus
+         hx-get="/admin/pm" hx-trigger="input changed delay:250ms, search"
+         hx-target="#task-results" hx-include="closest form" hx-push-url="true">
+</form>
+
+{# 新增大項目(任務範本):代碼 + 描述 → 建立後進編輯頁串設備/加細項 #}
+<details class="fold" style="margin:0 14px 12px;">
+  <summary>+ {{ t("admin.pm.newtask") }}</summary>
+  <form class="fold__body" method="post" action="/admin/pm">
+    <div class="inline-form">
+      <input name="task_no" required class="mono" placeholder="{{ t('admin.pm.taskcode_ph') }}" style="flex:1 1 30%;">
+      <input name="description" required placeholder="{{ t('admin.pm.desc') }}" style="flex:2 1 60%;">
+      <button type="submit" class="btn-primary">{{ t("admin.pm.create") }}</button>
+    </div>
+    <p class="form-hint" style="margin:0;">{{ t("admin.pm.newtask_hint") }}</p>
+  </form>
+</details>
+
+<div id="task-results">
+  {% include "partials/admin_task_list.html" %}
+</div>
+{% endblock %}

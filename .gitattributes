@@ -1,0 +1,17 @@
+# 預設:git 自行偵測文字檔,在 repo 內正規化行尾為 LF(把既有 core.autocrlf 行為明示化)。
+* text=auto
+
+# ★ 進 Linux 容器執行 / 被 Docker builder 解析的檔,working tree 也強制 LF。
+#   否則 Windows 開發機(core.autocrlf=true)會把它們 checkout 成 CRLF →
+#   容器內 `#!/usr/bin/env bash␍` shebang 壞掉、Dockerfile `\` 行接續壞掉。
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+
+# 二進位檔:不要被當文字做行尾正規化
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gz   binary
+*.zip  binary
+*.xlsx binary

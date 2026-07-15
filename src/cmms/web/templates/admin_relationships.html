@@ -1,0 +1,91 @@
+{% extends "admin_base.html" %}
+{% block content %}
+<div class="adm-head"><h2>{{ t("admin.rel.title") }}</h2></div>
+{% if err %}<div class="adm-banner">{{ err }}</div>{% endif %}
+<p class="form-hint" style="padding:0 14px 6px;color:var(--st-red);">{{ t("admin.rel.warn") }}</p>
+
+{# 現行邊統計(載入即顯示)#}
+<div class="adm-stats">
+  <div class="adm-stat"><span class="adm-stat__n">{{ contains_total }}</span><span class="adm-stat__l">{{ t("admin.rel.contains") }}</span></div>
+  <div class="adm-stat"><span class="adm-stat__n">{{ shared_total }}</span><span class="adm-stat__l">{{ t("admin.rel.shared") }}</span></div>
+</div>
+
+{# EID 查詢 #}
+<form method="get" action="/admin/relationships" class="adm-actions" style="padding:8px 14px;">
+  <input name="eid" class="mono" value="{{ eid or '' }}" data-suggest="asset" autocomplete="off"
+         placeholder="{{ t('admin.rel.lookup_ph') }}" style="min-width:200px;">
+  <button type="submit">{{ t("admin.rel.lookup") }}</button>
+</form>
+
+{% if eid %}
+  {% if asset %}
+  <p class="form-hint" style="padding:0 14px 8px;"><span class="mono">{{ eid }}</span> · {{ asset.description or "—" }}</p>
+  {% else %}
+  <div class="adm-banner">{{ t("admin.rel.notfound") }}</div>
+  {% endif %}
+
+  {# 單親容器(反向 contains_module)#}
+  <div class="adm-head"><h2 style="font-size:16px;">{{ t("admin.rel.parent") }}</h2></div>
+  {% if parents %}
+  <table class="adm-table"><tbody>
+    {% for e in parents %}
+    <tr>
+      <td class="mono"><a href="/admin/relationships?eid={{ e.from_asset_id }}">{{ e.from_asset_id }}</a></td>
+      <td><div class="adm-actions"><form method="post" action="/admin/relationships/{{ e.id }}/unlink" onsubmit="return confirm('{{ t("admin.rel.unlink_confirm") }}');"><input type="hidden" name="eid" value="{{ eid }}"><button type="submit" style="border-color:var(--st-red);color:var(--st-red);">{{ t("admin.rel.unlink") }}</button></form></div></td>
+    </tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}<p class="empty" style="padding:16px 24px;">{{ t("admin.rel.no_parent") }}</p>{% endif %}
+
+  {# 子模組(contains_module)#}
+  <div class="adm-head"><h2 style="font-size:16px;">{{ t("admin.rel.children") }}</h2></div>
+  {% if children %}
+  <table class="adm-table"><tbody>
+    {% for e in children %}
+    <tr>
+      <td class="mono"><a href="/admin/relationships?eid={{ e.to_asset_id }}">{{ e.to_asset_id }}</a></td>
+      <td><div class="adm-actions"><form method="post" action="/admin/relationships/{{ e.id }}/unlink" onsubmit="return confirm('{{ t("admin.rel.unlink_confirm") }}');"><input type="hidden" name="eid" value="{{ eid }}"><button type="submit" style="border-color:var(--st-red);color:var(--st-red);">{{ t("admin.rel.unlink") }}</button></form></div></td>
+    </tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}<p class="empty" style="padding:16px 24px;">{{ t("admin.rel.no_children") }}</p>{% endif %}
+
+  {# 共用相依(shared_dependency,from=此 EID)#}
+  <div class="adm-head"><h2 style="font-size:16px;">{{ t("admin.rel.shared") }}</h2></div>
+  {% if shared %}
+  <table class="adm-table"><tbody>
+    {% for e in shared %}
+    <tr>
+      <td class="mono"><a href="/admin/relationships?eid={{ e.to_asset_id }}">{{ e.to_asset_id }}</a></td>
+      <td><div class="adm-actions"><form method="post" action="/admin/relationships/{{ e.id }}/unlink" onsubmit="return confirm('{{ t("admin.rel.unlink_confirm") }}');"><input type="hidden" name="eid" value="{{ eid }}"><button type="submit" style="border-color:var(--st-red);color:var(--st-red);">{{ t("admin.rel.unlink") }}</button></form></div></td>
+    </tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}<p class="empty" style="padding:16px 24px;">{{ t("admin.rel.no_shared") }}</p>{% endif %}
+{% endif %}
+
+{# ---- 新增邊 ---- #}
+<div class="adm-head"><h2 style="font-size:17px;">{{ t("admin.rel.add") }}</h2></div>
+<div class="adm-form">
+  <form method="post" action="/admin/relationships/contain">
+    <h2 style="font-family:'Newsreader',serif;font-size:15px;margin:6px 0 0;">{{ t("admin.rel.add_contain") }}</h2>
+    <label>{{ t("admin.rel.parent_eid") }}</label>
+    <input name="parent_eid" class="mono" required data-suggest="asset"
+           data-suggest-strict data-strict-msg="{{ t('strict.asset') }}" autocomplete="off">
+    <label>{{ t("admin.rel.child_eid") }}</label>
+    <input name="child_eid" class="mono" required data-suggest="asset"
+           data-suggest-strict data-strict-msg="{{ t('strict.asset') }}" autocomplete="off">
+    <button type="submit" class="btn-submit" style="margin-top:10px;">{{ t("admin.rel.add_contain") }}</button>
+  </form>
+  <form method="post" action="/admin/relationships/shared" style="margin-top:20px;">
+    <h2 style="font-family:'Newsreader',serif;font-size:15px;margin:6px 0 0;">{{ t("admin.rel.add_shared") }}</h2>
+    <label>{{ t("admin.rel.resource_eid") }}</label>
+    <input name="resource_eid" class="mono" required data-suggest="asset"
+           data-suggest-strict data-strict-msg="{{ t('strict.asset') }}" autocomplete="off">
+    <label>{{ t("admin.rel.machine_eid") }}</label>
+    <input name="machine_eid" class="mono" required data-suggest="asset"
+           data-suggest-strict data-strict-msg="{{ t('strict.asset') }}" autocomplete="off">
+    <button type="submit" class="btn-submit" style="margin-top:10px;">{{ t("admin.rel.add_shared") }}</button>
+  </form>
+</div>
+{% endblock %}

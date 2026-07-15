@@ -1,0 +1,50 @@
+{
+  "items": [
+    {
+      "work_order_no": 30318,
+      "asset_id": "EID-70021",
+      "work_type": "REACTIVE",
+      "opened_at": "2026-07-01T09:12:00Z",
+      "closed_at": "2026-07-02T16:50:00Z",
+      "status": "CLOSED",
+      "hold_reason": "WAITING_MACHINE_TIME",
+      "status_history": [
+        {
+          "from_status": null,
+          "to_status": "OPEN",
+          "hold_reason": null,
+          "changed_at": "2026-07-01T09:12:00Z",
+          "source_actor": "human:jlee",
+          "is_downtime": true
+        },
+        {
+          "from_status": "IN_PROGRESS",
+          "to_status": "ON_HOLD",
+          "hold_reason": "WAITING_MACHINE_TIME",
+          "changed_at": "2026-07-01T14:30:00Z",
+          "source_actor": "human:alice.fang",
+          "is_downtime": false
+        },
+        {
+          "from_status": "ON_HOLD",
+          "to_status": "CLOSED",
+          "hold_reason": null,
+          "changed_at": "2026-07-02T16:50:00Z",
+          "source_actor": "human:alice.fang",
+          "is_downtime": false
+        }
+      ]
+    },
+    {
+      "work_order_no": 24401,
+      "asset_id": "EID-70004",
+      "work_type": "PM",
+      "opened_at": "2026-07-03T01:00:00Z",
+      "closed_at": null,
+      "status": "OPEN",
+      "hold_reason": null,
+      "status_history": []
+    }
+  ],
+  "truncated": false
+}

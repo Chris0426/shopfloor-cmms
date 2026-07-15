@@ -1,0 +1,34 @@
+# 自管 PG Machine 的 Fly 設定(獨立 app,同 org 同私網)。ADR-013 Tier B。
+# 部署:flyctl deploy -c infra/postgres/fly.pg.toml
+# App 端以 CMMS_DATABASE_URL = postgresql+asyncpg://<user>:<pw>@shopfloor-cmms-db.internal:5432/cmms 連線。
+#
+# 初次部署需設 secrets(值不入 git,見 ../secrets-manifest.md):
+#   flyctl secrets set -c infra/postgres/fly.pg.toml POSTGRES_PASSWORD=...
+
+app = "shopfloor-cmms-db"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  POSTGRES_USER = "cmms"
+  POSTGRES_DB = "cmms"
+  # POSTGRES_PASSWORD 走 secret
+
+# 持久資料卷(volume 須先建:flyctl volumes create pgdata -c infra/postgres/fly.pg.toml -r sin -s 3)
+[[mounts]]
+  source = "pgdata"
+  destination = "/var/lib/postgresql/data"
+
+# 只走私網,不開 public service(無 [http_service])
+[[services]]
+  protocol = "tcp"
+  internal_port = 5432
+
+  [[services.ports]]
+    port = 5432
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

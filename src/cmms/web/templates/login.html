@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>{{ t("login.submit") }} · {{ t("app.name") }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1 class="login-title">{{ t("app.name") }}</h1>
+      <p class="login-sub">{{ t("login.sub") }}</p>
+      {% if error %}<p class="login-error">{{ t("login.error") }}</p>{% endif %}
+      <form method="post" action="/app/login">
+        <label for="username">{{ t("login.username") }}</label>
+        <input id="username" name="username" autocomplete="username" required autofocus>
+        <label for="password">{{ t("login.password") }}</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button type="submit">{{ t("login.submit") }}</button>
+      </form>
+      <nav class="lang lang--login" aria-label="language">
+        {% for lc in locales %}
+        <a href="/app/set-locale?locale={{ lc }}&next=/app/login"
+           class="{{ 'is-active' if lc == locale else '' }}">{{ locale_labels[lc] }}</a>
+        {% endfor %}
+      </nav>
+    </div>
+  </div>
+</body>
+</html>

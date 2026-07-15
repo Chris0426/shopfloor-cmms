@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "partials/multi_input.html" import multi_input %}
+{% block title %}{{ t("eq.create.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("eq.create.title") }}{% endblock %}
+{% block content %}
+{% if msg == 'err' %}<div class="adm-banner" style="background:color-mix(in srgb, var(--st-red) 12%, transparent);color:var(--st-red);margin:10px 16px 0;padding:8px 12px;border-radius:8px;font-size:13px;">{{ t("eq.msg.err") }}</div>{% endif %}
+<form class="fold__body" method="post" action="/app/equipment/new" style="padding:12px 16px;">
+  <div class="inline-form">
+    {# asset_id(EID,PK)= 建立時可編輯必填,建立後不可變(A4);須合 MES EID #}
+    <input name="asset_id" required class="mono" pattern="EID-\d{5}" maxlength="9"
+           placeholder="{{ t('eq.create.eidcode') }}" title="{{ t('eq.create.eidhint') }}"
+           autocomplete="off" style="flex:1 1 46%;">
+    <input name="site" value="PLANT-1" required placeholder="{{ t('eq.site') }}" style="flex:1 1 46%;">
+    <input name="description" required placeholder="{{ t('eq.field.desc') }}" style="flex:1 1 100%;">
+    <select name="asset_type" required style="flex:1 1 46%;padding:8px;border:1px solid var(--line);border-radius:9px;">
+      {% for at in asset_types %}
+      <option value="{{ at.code }}">{{ at.label }}</option>
+      {% endfor %}
+    </select>
+    <input name="asset_subtype" placeholder="{{ t('eq.subtype') }}" style="flex:1 1 46%;">
+    <div style="flex:1 1 46%;">
+      <span class="form-hint" style="margin:0 0 4px;display:block;">{{ t("eq.owner") }}</span>
+      {{ multi_input("owners", [], t("eq.owner"), t) }}
+    </div>
+    <select name="department" style="flex:1 1 46%;padding:8px;border:1px solid var(--line);border-radius:9px;">
+      <option value="">{{ t('eq.dept') }}</option>
+      {% for d in departments %}
+      <option value="{{ d.code }}">{{ d.label }}</option>
+      {% endfor %}
+    </select>
+    <select name="line" style="flex:1 1 46%;padding:8px;border:1px solid var(--line);border-radius:9px;">
+      <option value="">{{ t('eq.line') }}</option>
+      {% for ln in lines %}
+      <option value="{{ ln.code }}">{{ ln.label }}</option>
+      {% endfor %}
+    </select>
+    <input name="manufacturer" placeholder="{{ t('eq.manufacturer') }}" style="flex:1 1 46%;">
+    <input name="model_no" class="mono" placeholder="{{ t('eq.model') }}" style="flex:1 1 46%;">
+    <input name="serial_no" class="mono" placeholder="{{ t('eq.serial') }}" style="flex:1 1 46%;">
+    <input name="host_name" placeholder="{{ t('eq.host') }}" style="flex:1 1 46%;">
+    <input name="asset_ref" placeholder="{{ t('eq.asset_ref') }}" style="flex:1 1 46%;">
+    <input name="product" placeholder="{{ t('eq.product') }}" style="flex:1 1 46%;">
+    <input name="process_segment_class" placeholder="{{ t('eq.psc') }}" style="flex:1 1 46%;">
+    <input name="weblink" placeholder="{{ t('eq.weblink') }}" style="flex:1 1 100%;">
+    <textarea name="comments" placeholder="{{ t('eq.comments') }}" rows="2"
+              style="flex:1 1 100%;padding:8px;border:1px solid var(--line);border-radius:9px;"></textarea>
+    <p class="form-hint" style="flex:1 1 100%;margin:0;">{{ t("eq.create.eidhint") }}</p>
+    <div style="flex:1 1 100%;display:flex;gap:8px;">
+      <button type="submit" class="btn-primary" style="flex:1;">{{ t("eq.create.submit") }}</button>
+      <a href="/app/equipment" class="btn-ghost">{{ t("action.cancel") }}</a>
+    </div>
+  </div>
+</form>
+{% endblock %}

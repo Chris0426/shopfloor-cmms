@@ -1,0 +1,137 @@
+{% extends "admin_base.html" %}
+{% block content %}
+{% if err %}<div class="adm-banner">{{ err }}</div>{% endif %}
+<div class="adm-head">
+  <h2><span class="mono">{{ task.task_no }}</span>
+    {% if task.is_active %}<span class="badge badge--done">{{ t("admin.status.active") }}</span>
+    {% else %}<span class="badge badge--muted">{{ t("admin.status.inactive") }}</span>{% endif %}
+  </h2>
+  <a href="/admin/pm">← {{ t("admin.pm.title") }}</a>
+</div>
+
+{# 描述編輯 + 啟用/停用範本 #}
+<div class="adm-form" style="max-width:none;padding-top:0;">
+  <form class="inline-form" method="post" action="/admin/pm/{{ task.task_no }}/update">
+    <input name="description" value="{{ task.description }}" required style="flex:1 1 60%;">
+    <button type="submit" class="btn-primary">{{ t("admin.action.save") }}</button>
+    </form>
+  <form class="inline-form" method="post" action="/admin/pm/{{ task.task_no }}/active" style="margin-top:6px;">
+    {% if task.is_active %}
+    <input type="hidden" name="active" value="0">
+    <button type="submit">{{ t("admin.action.deactivate") }}</button>
+    {% else %}
+    <input type="hidden" name="active" value="1">
+    <button type="submit">{{ t("admin.action.activate") }}</button>
+    {% endif %}
+    <span class="form-hint">{{ t("admin.pm.active_hint") }}</span>
+  </form>
+</div>
+
+{# ---- 細項步驟(migration 0016;增改刪 + 每步用料)---- #}
+<div class="adm-head" style="padding-top:8px;"><h2 style="font-size:17px;">{{ t("admin.pm.steps") }}</h2></div>
+{% if steps %}
+<ol class="adm-steps">
+  {% for s in steps %}
+  <li>
+    <form class="inline-form" method="post" action="/admin/pm/{{ task.task_no }}/steps/{{ s.id }}/update" style="margin-bottom:2px;">
+      <input name="task_desc" value="{{ s.task_desc }}" required style="flex:1 1 55%;">
+      <button type="submit">{{ t("admin.action.save") }}</button>
+      <button type="submit" formaction="/admin/pm/{{ task.task_no }}/steps/{{ s.id }}/delete"
+              formnovalidate style="border-color:color-mix(in srgb,var(--st-red) 45%,transparent);color:var(--st-red);"
+              onclick="return confirm('{{ t("admin.pm.step_del_confirm") }}')">✕</button>
+    </form>
+    {# 每步用料:chips + 移除 + 新增(料號自動完成) #}
+    <div class="inline-form" style="margin:4px 0 2px;">
+      {% for p in parts_by_step.get(s.id, []) %}
+      <form method="post" action="/admin/pm/{{ task.task_no }}/steps/{{ s.id }}/parts/{{ p.item_code }}/delete" style="margin:0;">
+        <button type="submit" class="chip" style="cursor:pointer;" title="{{ t('admin.pm.part_del') }}">
+          <span class="mono">{{ p.item_code }}</span>{% if p.replace_qty is not none %} ×{{ '%g'|format(p.replace_qty|float) }}{% endif %} ✕
+        </button>
+      </form>
+      {% endfor %}
+      <form class="inline-form" method="post" action="/admin/pm/{{ task.task_no }}/steps/{{ s.id }}/parts" style="margin:0;">
+        <input name="item_code" class="mono" required data-suggest="part"
+               data-suggest-strict data-strict-msg="{{ t('strict.part') }}" autocomplete="off"
+               placeholder="{{ t('eq.issue.item') }}" style="width:130px;font-size:12px;padding:5px 8px;">
+        <input name="replace_qty" inputmode="decimal" placeholder="×" style="width:52px;font-size:12px;padding:5px 8px;">
+        <button type="submit" style="font-size:12px;padding:5px 10px;">+ {{ t("admin.pm.part_add") }}</button>
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="empty" style="padding:16px;">{{ t("admin.pm.nosteps") }}</p>
+{% endif %}
+<form class="inline-form adm-form" method="post" action="/admin/pm/{{ task.task_no }}/steps" style="max-width:none;">
+  <input name="task_desc" required placeholder="{{ t('admin.pm.step_ph') }}" style="flex:1 1 60%;">
+  <button type="submit" class="btn-primary">+ {{ t("admin.pm.step_add") }}</button>
+</form>
+
+{# ---- 排程(任務 × 設備:串 EID / 週期 / 下次到期 / 負責人 / 暫停)---- #}
+<div class="adm-head" style="padding-top:14px;"><h2 style="font-size:17px;">{{ t("admin.pm.schedules") }}</h2></div>
+{% if schedules %}
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.pm.sched_asset") }}</th>
+      <th>{{ t("admin.pm.sched_freq") }}</th>
+      <th>{{ t("pm.next_due") }}</th>
+      <th>{{ t("wo.owner") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for pm in schedules %}
+    <tr {% if pm.is_suppressed %}style="opacity:.55;"{% endif %}>
+      <td class="mono"><a href="/app/equipment/{{ pm.asset_id }}">{{ pm.asset_id }}</a><br>
+        <span class="form-hint mono">{{ pm.pm_id }}</span></td>
+      <td colspan="3">
+        <form class="inline-form" method="post" action="/admin/pm/{{ task.task_no }}/schedules/{{ pm.pm_id }}/update">
+          <input name="frequency_interval" value="{{ pm.frequency_interval }}" inputmode="numeric"
+                 style="width:52px;" title="{{ t('pm.every') }}">
+          <select name="frequency_unit">
+            <option value="" {{ 'selected' if not pm.frequency_unit else '' }}>—</option>
+            {% for u in ['Days','Weeks','Months'] %}
+            <option value="{{ u }}" {{ 'selected' if pm.frequency_unit == u else '' }}>{{ t("frequnit." ~ u) }}</option>
+            {% endfor %}
+          </select>
+          <input name="next_due_date" type="date" value="{{ pm.next_due_date.isoformat() if pm.next_due_date else '' }}">
+          <input name="assigned_person" value="{{ pm.assigned_person or '' }}" data-suggest="person"
+                 autocomplete="off" placeholder="{{ t('wo.unassigned') }}" style="width:130px;">
+          <button type="submit">{{ t("admin.action.save") }}</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/admin/pm/{{ task.task_no }}/schedules/{{ pm.pm_id }}/suppress" style="margin:0;">
+          {% if pm.is_suppressed %}
+          <input type="hidden" name="suppressed" value="0">
+          <button type="submit" class="chip" style="cursor:pointer;">{{ t("admin.pm.unsuppress") }}</button>
+          {% else %}
+          <input type="hidden" name="suppressed" value="1">
+          <button type="submit" class="chip" style="cursor:pointer;">{{ t("admin.pm.suppress") }}</button>
+          {% endif %}
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty" style="padding:16px;">{{ t("admin.pm.nosched") }}</p>
+{% endif %}
+
+<form class="inline-form adm-form" method="post" action="/admin/pm/{{ task.task_no }}/schedules" style="max-width:none;">
+  <input name="asset_id" class="mono" required data-suggest="asset" autocomplete="off"
+         placeholder="EID-…" style="width:150px;">
+  <input name="frequency_interval" value="0" inputmode="numeric" style="width:52px;" title="{{ t('pm.every') }}">
+  <select name="frequency_unit">
+    <option value="">—</option>
+    {% for u in ['Days','Weeks','Months'] %}<option value="{{ u }}">{{ t("frequnit." ~ u) }}</option>{% endfor %}
+  </select>
+  <input name="next_due_date" type="date">
+  <input name="assigned_person" data-suggest="person" autocomplete="off" placeholder="{{ t('wo.owner') }}" style="width:130px;">
+  <button type="submit" class="btn-primary">+ {{ t("admin.pm.sched_add") }}</button>
+</form>
+<p class="form-hint" style="padding:0 14px 20px;">{{ t("admin.pm.sched_hint") }}</p>
+{% endblock %}

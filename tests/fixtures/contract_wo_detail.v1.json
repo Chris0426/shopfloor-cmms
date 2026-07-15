@@ -1,0 +1,85 @@
+{
+  "work_order_no": 30318,
+  "asset_id": "EID-70021",
+  "work_type": "REACTIVE",
+  "status": "CLOSED",
+  "brief_description": "吸嘴堵塞、取料失敗連續報警",
+  "diagnosis": "真空泵老化,真空度不足導致取料失敗。",
+  "external_ref": "MRQ-4821",
+  "opened_date": "2026-07-01",
+  "scheduled_date": "2026-07-02",
+  "work_start_time": "09:12:00",
+  "work_complete_time": "16:45:00",
+  "closed_date": "2026-07-02",
+  "closed_time": "16:50:00",
+  "closed_by": "Alice Fang",
+  "assigned_vendor": "CMB",
+  "assigned_person": "Alice Fang",
+  "action_taken": "更換真空泵,真空度回復正常。",
+  "confirmed_reason_code": "efcPickupVacuumFault",
+  "opened_at": "2026-07-01T09:12:00Z",
+  "closed_at": "2026-07-02T16:50:00Z",
+  "hold_reason": "WAITING_MACHINE_TIME",
+  "downtime_minutes": 452,
+  "downtime_estimated": false,
+  "status_history": [
+    {
+      "from_status": null,
+      "to_status": "OPEN",
+      "hold_reason": null,
+      "changed_at": "2026-07-01T09:12:00Z",
+      "source_actor": "human:jlee",
+      "is_downtime": true
+    },
+    {
+      "from_status": "IN_PROGRESS",
+      "to_status": "ON_HOLD",
+      "hold_reason": "WAITING_MACHINE_TIME",
+      "changed_at": "2026-07-01T14:30:00Z",
+      "source_actor": "human:alice.fang",
+      "is_downtime": false
+    },
+    {
+      "from_status": "ON_HOLD",
+      "to_status": "CLOSED",
+      "hold_reason": null,
+      "changed_at": "2026-07-02T16:50:00Z",
+      "source_actor": "human:alice.fang",
+      "is_downtime": false
+    }
+  ],
+  "parts": [
+    {
+      "item_code": "ES000804",
+      "quantity": 1.0
+    },
+    {
+      "item_code": "ES000805",
+      "quantity": 2.0
+    }
+  ],
+  "notes": [
+    {
+      "occurred_at": "2026-07-01T09:15:00Z",
+      "entry_type": "report",
+      "body": "吸嘴堵塞、取料失敗連續報警",
+      "source_actor": "human:jlee"
+    },
+    {
+      "occurred_at": "2026-07-01T11:40:00Z",
+      "entry_type": "diagnosis",
+      "body": "真空度不足,疑真空泵老化。",
+      "source_actor": "human:alice.fang"
+    },
+    {
+      "occurred_at": "2026-07-02T16:45:00Z",
+      "entry_type": "progress",
+      "body": "更換真空泵完成,試機 OK。",
+      "source_actor": "human:alice.fang"
+    }
+  ],
+  "notes_truncated": false,
+  "assignees": [
+    "Alice Fang"
+  ]
+}

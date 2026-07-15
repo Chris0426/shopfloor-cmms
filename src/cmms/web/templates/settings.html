@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{{ t("settings.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("settings.title") }}{% endblock %}
+{% block content %}
+<div class="inv-detail">
+  {% if changed %}<div class="adm-banner" style="background:color-mix(in srgb, var(--st-done) 14%, transparent);color:var(--st-done);margin:0 0 14px;">{{ t("settings.password.changed") }}</div>{% endif %}
+
+  <p class="inv-rel-label">{{ t("myprop.title") }}</p>
+  <p class="form-hint">{{ t("myprop.settings_hint") }}</p>
+  <a class="chip" href="/app/proposals">{{ t("myprop.link") }} ›</a>
+
+  {# 匯出中心 + 供應商入口(桌面側欄亦有;此區讓手機 5-tab 已滿的情況下仍可到達,#UX)#}
+  <p class="inv-rel-label" style="margin-top:22px;">{{ t("export.settings.card") }}</p>
+  <p class="form-hint">{{ t("export.settings.hint") }}</p>
+  <a class="chip" href="/app/export">{{ t("export.title") }} ›</a>
+  <a class="chip" href="/app/suppliers">{{ t("nav.suppliers") }} ›</a>
+  <a class="chip" href="/app/help">{{ t("help.title") }} ›</a>
+
+  <p class="inv-rel-label" style="margin-top:22px;">{{ t("settings.password.section") }}</p>
+  {% if pw_error %}<p class="form-hint" style="color:var(--st-red);">{{ t(pw_error) }}</p>{% endif %}
+  <form method="post" action="/app/settings/password" style="max-width:360px;">
+    <input name="current_password" type="password" placeholder="{{ t('settings.password.current') }}" required
+           style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;box-sizing:border-box;">
+    <input name="new_password" type="password" placeholder="{{ t('settings.password.new') }}" required
+           style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;box-sizing:border-box;">
+    <button type="submit" class="btn-submit">{{ t("settings.password.submit") }}</button>
+  </form>
+
+  <p class="inv-rel-label" style="margin-top:22px;">{{ t("settings.assignee.section") }}</p>
+  <p class="form-hint">{{ t("settings.assignee.hint") }}</p>
+  <form method="post" action="/app/settings/assignee" style="max-width:360px;">
+    <input name="assignee" value="{{ assignee or '' }}" placeholder="{{ t('admin.field.assignee') }}"
+           data-suggest="person" autocomplete="off"
+           style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;box-sizing:border-box;">
+    <button type="submit" class="btn-submit">{{ t("settings.assignee.save") }}</button>
+  </form>
+
+  <p class="inv-rel-label" style="margin-top:22px;">{{ t("settings.locale.section") }}</p>
+  <div class="filters">
+    {% for lc in locales %}
+    <a class="chip {{ 'is-active' if lc == locale else '' }}" href="/app/set-locale?locale={{ lc }}&next=/app/settings">{{ locale_labels[lc] }}</a>
+    {% endfor %}
+  </div>
+
+  {# id="pat":存/撤後 redirect 帶 #pat fragment 直接捲到本區(banner 在長頁下方,否則第一眼看不到) #}
+  <p class="inv-rel-label" id="pat" style="margin-top:22px;">{{ t("settings.pat.section") }}</p>
+  {% if pat == 'saved' %}<p class="form-hint" style="color:var(--st-done);">{{ t("settings.pat.saved") }}</p>
+  {% elif pat == 'revoked' %}<p class="form-hint">{{ t("settings.pat.revoked") }}</p>
+  {% elif pat == 'keyunset' %}<p class="form-hint" style="color:var(--st-red);">{{ t("settings.pat.keyunset") }}</p>
+  {% elif pat == 'keyinvalid' %}<p class="form-hint" style="color:var(--st-red);">{{ t("settings.pat.keyinvalid") }}</p>
+  {% elif pat == 'empty' %}<p class="form-hint" style="color:var(--st-red);">{{ t("settings.pat.empty") }}</p>
+  {% elif pat == 'error' %}<p class="form-hint" style="color:var(--st-red);">{{ t("settings.pat.error") }}</p>
+  {% endif %}
+  {# 一人一支(#8):有 → metadata + 更換/刪除;無 → 單一新增表單。明文永不回顯。 #}
+  {% if pat_creds %}
+  {% set c = pat_creds[0] %}
+  <p class="form-hint">
+    <span class="badge badge--done">{{ c.system }}</span>
+    {{ t("settings.pat.created") }} {{ c.created_at.date() }}{% if c.last_used_at %} · {{ t("settings.pat.lastused") }} {{ c.last_used_at.date() }}{% endif %}
+  </p>
+  <details class="fold" style="max-width:360px;margin:8px 0;">
+    <summary>{{ t("settings.pat.replace") }}</summary>
+    {# 更換 = 存新的(vault 同交易先撤舊再存新,#8) #}
+    <form class="fold__body" method="post" action="/app/settings/pat">
+      <input name="pat_secret" type="password" placeholder="{{ t('settings.pat.placeholder') }}" required
+             style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box;">
+      <button type="submit" class="btn-submit">{{ t("settings.pat.replace.submit") }}</button>
+      <p class="form-hint" style="margin:0;">{{ t("settings.pat.replace.hint") }}</p>
+    </form>
+  </details>
+  <form method="post" action="/app/settings/pat/revoke" style="max-width:360px;"
+        onsubmit="return confirm('{{ t("settings.pat.delete.confirm") }}')">
+    <button type="submit" class="btn-submit" style="background:transparent;color:var(--st-red);border:1px solid var(--line);">{{ t("settings.pat.delete") }}</button>
+  </form>
+  {% else %}
+  <p class="form-hint">{{ t("settings.pat.hint") }}</p>
+  <form method="post" action="/app/settings/pat" style="max-width:360px;">
+    <input name="pat_secret" type="password" placeholder="{{ t('settings.pat.placeholder') }}" required
+           style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;box-sizing:border-box;">
+    <button type="submit" class="btn-submit">{{ t("settings.pat.save") }}</button>
+  </form>
+  {% endif %}
+
+  {# Telegram 助理綁定(續-15):產生一次性綁定碼 → 對 bot 傳 /start <碼>。碼只顯示一次。 #}
+  <p class="inv-rel-label" style="margin-top:22px;">{{ t("settings.tg.section") }}</p>
+  {% if tg_code %}
+  <p class="form-hint" style="color:var(--st-done);">{{ t("settings.tg.code_intro") }}</p>
+  <p style="font-size:1.3rem;font-family:monospace;font-weight:600;letter-spacing:2px;margin:6px 0 10px;">{{ tg_code }}</p>
+  <p class="form-hint">{{ t("settings.tg.teach") }}</p>
+  <a class="btn-submit" style="display:inline-block;text-decoration:none;" href="https://t.me/{{ bot_username }}?start={{ tg_code }}">{{ t("settings.tg.deeplink") }}</a>
+  {% elif tg_link %}
+  <p class="form-hint"><span class="badge badge--done">{{ t("settings.tg.bound") }}</span> ····{{ tg_link.chat_id[-4:] }}</p>
+  <form method="post" action="/app/settings/telegram/unlink" style="max-width:360px;"
+        onsubmit="return confirm('{{ t("settings.tg.unlink.confirm") }}')">
+    <button type="submit" class="btn-submit" style="background:transparent;color:var(--st-red);border:1px solid var(--line);">{{ t("settings.tg.unlink") }}</button>
+  </form>
+  {% else %}
+  <p class="form-hint">{{ t("settings.tg.hint") }}</p>
+  <form method="post" action="/app/settings/telegram/code" style="max-width:360px;">
+    <button type="submit" class="btn-submit">{{ t("settings.tg.generate") }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

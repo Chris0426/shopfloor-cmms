@@ -1,0 +1,77 @@
+{% extends "admin_base.html" %}
+{% block content %}
+<div class="adm-head"><h2>{{ t("admin.audit.title") }}</h2></div>
+<p class="form-hint" style="padding:0 14px 6px;">{{ t("admin.audit.hint") }}</p>
+
+{# 過濾列:來源分頁(保留 actor)+ actor 子字串 + 每源上限 #}
+<form method="get" action="/admin/audit" class="adm-audit-filter">
+  <nav class="adm-audit-tabs">
+    <a href="/admin/audit?source=all{% if actor %}&actor={{ actor }}{% endif %}"
+       class="{{ 'is-active' if source == 'all' else '' }}">{{ t("admin.audit.src.all") }}</a>
+    {% for s in sources %}
+    <a href="/admin/audit?source={{ s }}{% if actor %}&actor={{ actor }}{% endif %}"
+       class="{{ 'is-active' if source == s else '' }}">{{ t("admin.audit.src." ~ s) }}</a>
+    {% endfor %}
+  </nav>
+  <span class="adm-audit-controls">
+    <input type="hidden" name="source" value="{{ source }}">
+    <input type="text" name="actor" value="{{ actor }}" placeholder="{{ t('admin.audit.actor_ph') }}">
+    <input type="number" name="limit" value="{{ limit }}" min="1" max="200" style="width:68px;">
+    <button type="submit">{{ t("admin.audit.filter") }}</button>
+  </span>
+</form>
+
+{% if events %}
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.audit.when") }}</th>
+      <th>{{ t("admin.audit.who") }}</th>
+      <th>{{ t("admin.audit.what") }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    {% set o = e.o %}
+    <tr>
+      <td class="mono" style="white-space:nowrap;">{{ e.when.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>
+        {% set who = e.who or "" %}
+        <span class="author-chip author-chip--{{ 'agent' if who.startswith('agent:') else 'human' }}">{{ who or "—" }}</span>
+      </td>
+      <td>
+        {% if e.kind == "status" %}
+        <span class="badge badge--muted">{{ t("admin.audit.src.status") }}</span>
+        <a class="mono" href="/app/work-orders/{{ o.work_order_no }}">WO-{{ o.work_order_no }}</a>
+        <span class="mono">{{ o.from_status or "∅" }} → </span>
+        <span class="badge badge--{{ status_css(o.to_status) }}">{{ t("status." ~ o.to_status) }}</span>
+        {% if o.hold_reason %}<span class="badge badge--hold">{{ t("holdreason." ~ o.hold_reason) }}</span>{% endif %}
+        {% elif e.kind == "note" %}
+        <span class="badge badge--muted">{{ t("admin.audit.note_edited") }}</span>
+        <a class="mono" href="/app/work-orders/{{ o.work_order_no }}">WO-{{ o.work_order_no }}</a>
+        <span class="badge badge--{{ note_type_css(o.entry_type) }}">{{ t("notetype." ~ o.entry_type) }}</span>
+        {% elif e.kind == "stock" %}
+        <span class="badge badge--{{ 'red' if o.qty_delta < 0 else 'done' }}">{{ o.kind }}</span>
+        <a class="mono" href="/app/inventory/{{ o.item_code }}">{{ o.item_code }}</a>
+        <span class="mono">{{ "%+g"|format(o.qty_delta) }}</span>
+        {% if o.work_order_no %}<a class="mono" href="/app/work-orders/{{ o.work_order_no }}">WO-{{ o.work_order_no }}</a>{% endif %}
+        {% if o.charge_target_asset_id %}<a class="mono" href="/app/equipment/{{ o.charge_target_asset_id }}">{{ o.charge_target_asset_id }}</a>{% endif %}
+        {% elif e.kind == "proposal" %}
+        <span class="badge badge--{{ 'done' if o.status == 'CONFIRMED' else ('red' if o.status == 'REJECTED' else 'muted') }}">{{ o.status }}</span>
+        <span>{{ t("admin.prop.op." ~ o.operation) }}</span>
+        {% if o.params.get('work_order_no') %}<a class="mono" href="/app/work-orders/{{ o.params['work_order_no'] }}">WO-{{ o.params['work_order_no'] }}</a>{% endif %}
+        {% if o.params.get('item_code') %}<a class="mono" href="/app/inventory/{{ o.params['item_code'] }}">{{ o.params['item_code'] }}</a>{% endif %}
+        {% elif e.kind == "deletion" %}
+        <span class="badge badge--red">{{ t("admin.audit." ~ o.kind ~ "_deleted") }}</span>
+        <a class="mono" href="/admin/pm/{{ o.task_no }}">{{ o.task_no }}</a>
+        <span>{{ o.detail }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{{ t("admin.audit.empty") }}</p>
+{% endif %}
+{% endblock %}

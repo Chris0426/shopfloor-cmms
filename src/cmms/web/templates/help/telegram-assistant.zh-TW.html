@@ -1,0 +1,145 @@
+{# SOP 片段:Telegram 助理設定(文字一字不改自 docs/sop/telegram-assistant-sop.html;視覺改 cmms 原生 .sop-*)。
+   不含 <html>/<head>/<body>/<style>;深淺色由 app.css CSS 變數處理。 #}
+<div class="sop">
+
+  <p class="sop-hero">把維修助理裝進你的 Telegram</p>
+  <p class="sop-lede">綁定之後,你可以直接在 Telegram 問工單、查設備、查備品,不必登入系統;而你負責的機台一開單或結案,通知也會直接送到這個對話。全程約三分鐘,一次設定,永久有效。</p>
+
+  <div class="sop-steps">
+
+    <div class="sop-step">
+      <div class="sop-num">1</div>
+      <div class="sop-step-body">
+        <h2>在 Telegram 找到機器人</h2>
+        <p>Telegram 搜尋列輸入 <code class="sop-code">@shopfloor_cmms_bot</code>,開啟名為「<strong>Shopfloor CMMS 維修通知</strong>」的機器人,按下方的<strong>開始 / Start</strong>。</p>
+        <p>它會回你一段綁定說明 —— 這是正常的,代表機器人活著,但還不知道你是誰。</p>
+        <figure class="sop-figure">
+          <div class="sop-mock">
+            <div class="sop-mock-bar sop-mock-bar--tg">TELEGRAM</div>
+            <div class="sop-mock-body">
+              <div class="sop-chat">
+                <div class="sop-bub me"><span class="mono">/start</span></div>
+                <div class="sop-bub bot">請先綁定才能使用助理:登入 cmms → 設定 → Telegram 助理 → 產生綁定碼,再回這裡傳 <span class="mono">/start &lt;綁定碼&gt;</span>(10 分鐘內有效)。</div>
+              </div>
+            </div>
+          </div>
+          <figcaption class="sop-figcaption">按下 Start 後你會看到的畫面。</figcaption>
+        </figure>
+      </div>
+    </div>
+
+    <div class="sop-step">
+      <div class="sop-num">2</div>
+      <div class="sop-step-body">
+        <h2>在 CMMS 產生綁定碼</h2>
+        <p>登入 <a href="https://cmms.example.com/app">cmms.example.com/app</a>,進入<strong>設定</strong>頁(電腦版在左側欄下方你的名字那一區;手機版在右上角頭像)。</p>
+        <p>往下捲到「<strong>Telegram 助理</strong>」,按<strong>產生綁定碼</strong>。</p>
+        <figure class="sop-figure">
+          <div class="sop-mock">
+            <div class="sop-mock-bar sop-mock-bar--cmms">CMMS · 設定</div>
+            <div class="sop-mock-body">
+              <p class="sop-mock-label">Telegram 助理</p>
+              <p class="sop-mock-hint sop-ok">這組綁定碼 10 分鐘內有效,只會顯示這一次。</p>
+              <p class="sop-mock-code">kZ8p-R2mQx7T</p>
+              <p class="sop-mock-hint">在 Telegram 對 @shopfloor_cmms_bot 傳送 <span class="mono">/start kZ8p-R2mQx7T</span></p>
+              <span class="sop-btn-cmms">用 Telegram 開啟</span>
+            </div>
+          </div>
+          <figcaption class="sop-figcaption">綁定碼只顯示這一次。錯過了不要緊 —— 再按一次「產生綁定碼」就會給你新的(舊的自動失效)。</figcaption>
+        </figure>
+      </div>
+    </div>
+
+    <div class="sop-step">
+      <div class="sop-num">3</div>
+      <div class="sop-step-body">
+        <h2>把碼交給機器人</h2>
+        <p><strong>最快的方式:</strong>直接按頁面上的「<strong>用 Telegram 開啟</strong>」按鈕,它會自動開啟 Telegram 並把碼送出去,你什麼都不用打。</p>
+        <p><strong>手動的方式:</strong>回到 Telegram,傳 <code class="sop-code">/start</code> 空一格再貼上你的碼。</p>
+        <figure class="sop-figure">
+          <div class="sop-mock">
+            <div class="sop-mock-bar sop-mock-bar--tg">TELEGRAM</div>
+            <div class="sop-mock-body">
+              <div class="sop-chat">
+                <div class="sop-bub me"><span class="mono">/start kZ8p-R2mQx7T</span></div>
+                <div class="sop-bub bot">✓ 綁定成功。現在可以直接在這裡問助理。傳 <span class="mono">/new</span> 可開新對話。</div>
+              </div>
+            </div>
+          </div>
+          <figcaption class="sop-figcaption">看到「綁定成功」就完成了 —— 助理與通知同時開通。</figcaption>
+        </figure>
+      </div>
+    </div>
+
+  </div>
+
+  <section class="sop-block">
+    <h2>完成之後,你多了兩件事</h2>
+
+    <h3>一、隨時可以問</h3>
+    <p>直接在這個對話裡用中文問就好,不用記指令。助理讀的是 CMMS 的即時資料,不是它自己編的。</p>
+    <figure class="sop-figure">
+      <div class="sop-mock">
+        <div class="sop-mock-bar sop-mock-bar--tg">TELEGRAM</div>
+        <div class="sop-mock-body">
+          <div class="sop-chat">
+            <div class="sop-bub me">我有哪些 open 工單?</div>
+            <div class="sop-bub bot">目前查到 1 張 OPEN 工單。<br><br><span class="link">[30160]</span> — OPEN · <span class="link">[EID-70028]</span> Calibrator-03<br>Feeder jammed;開單日 2024-06-14;類型 REACTIVE;廠商 SF。</div>
+          </div>
+        </div>
+      </div>
+      <figcaption class="sop-figcaption">回覆裡的工單號和設備編號都是可以直接點開的連結。</figcaption>
+    </figure>
+    <p>還可以問這些:</p>
+    <ul>
+      <li>「EID-70021 最近修過什麼?」</li>
+      <li>「BX-820 的備品還剩多少?」</li>
+      <li>「這個月有哪些保養要做?」</li>
+    </ul>
+
+    <h3>二、你負責的機台會主動通知你</h3>
+    <p>你負責的機台一開單或結案,通知會直接送到這個對話 —— 不必守著系統。你關注的同事(例如你代班的機台)開單時也會通知你。</p>
+
+    <div class="sop-note">
+      <strong>回覆需要一點時間。</strong>助理是真的去查資料庫再回答,不是罐頭回覆,通常要等十幾秒到一分鐘。看到「正在輸入…」就表示它在查,等它就好,不用重複發問。
+    </div>
+
+    <div class="sop-note sop-note--warn">
+      <strong>助理不會替你動資料。</strong>你可以請它幫忙查、幫忙整理,但結單、領料、改狀態這類動作,它只能「提出建議」,一律要由管理員在系統裡確認才會生效。安全網在系統這一端,不在對話這一端。
+    </div>
+  </section>
+
+  <section class="sop-block">
+    <h2>遇到問題</h2>
+    <div class="sop-tbl-wrap">
+      <table class="sop-table">
+        <thead>
+          <tr><th>狀況</th><th>怎麼辦</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>機器人只回綁定說明,不回答問題</td>
+            <td>代表還沒綁定成功。回到步驟 2 重新產生一組碼再試一次。</td>
+          </tr>
+          <tr>
+            <td>貼了碼卻說無效</td>
+            <td>碼有 10 分鐘期限,而且用過一次就失效。直接重新產生一組新的。</td>
+          </tr>
+          <tr>
+            <td>對話變得很長很亂</td>
+            <td>傳 <code class="sop-code">/new</code> 開一個乾淨的新對話(助理會忘掉先前的上下文,重新開始)。</td>
+          </tr>
+          <tr>
+            <td>想解除綁定 / 換手機</td>
+            <td>到 CMMS 設定頁的「Telegram 助理」按<strong>解除綁定</strong>,之後重新產碼綁定即可。</td>
+          </tr>
+          <tr>
+            <td>助理說「暫時無法回應」</td>
+            <td>後端忙碌或逾時。稍等一下再問一次;持續發生請告知 Jordan。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>

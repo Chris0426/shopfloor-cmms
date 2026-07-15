@@ -1,0 +1,72 @@
+[project]
+name = "cmms"
+version = "0.0.0"
+description = "Shopfloor PLANT-1 CMMS modernization — governed domain service + MCP + CLI over PostgreSQL"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+
+# 技術棧見 docs/ARCHITECTURE.md ADR-012(Accepted)。版本下限保守，CI 鎖在 uv.lock / requirements。
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "mcp>=1.2",            # 官方 Python MCP SDK，Streamable HTTP transport(ADR-012)
+    "typer>=0.15",         # CLI(thin client)
+    "pyjwt[crypto]>=2.10",  # ADR-017 on-box principal JWS 驗證(Ed25519/EdDSA + JWKS)
+    "boto3>=1.35",          # ADR-019 媒體 R2 S3 client(app→R2 上傳 + presign;仿 infra/backup)
+    "jinja2>=3.1",          # ADR-019 web UI 伺服器渲染(工程師操作台 thin client)
+    "argon2-cffi>=23.1",    # ADR-022 本地帳號密碼雜湊(argon2id)
+    "python-multipart>=0.0.12",  # ADR-022 登入表單(FastAPI Form) / 後續照片上傳
+    "cryptography>=44",     # ADR-020/022 §5 PAT vault 封套加密(Fernet;原經 pyjwt[crypto] 傳遞,升為直接依賴)
+    "httpx>=0.28",          # ADR-020 dock → Hermes gateway 實接(runtime 呼叫 /chat;原為 dev-only,升為直接依賴)
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "testcontainers[postgres]>=4.8",   # integration test 用真的 PG(ADR-012)
+    "psycopg[binary]>=3.2",            # alembic 同步 driver / 測試用
+]
+
+[project.scripts]
+cmms = "cmms.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cmms"]
+
+# ---- ruff(取代 black + isort + flake8，ADR-012)----
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+
+# FastAPI/Typer 慣例:Depends/Query/Argument 在預設值是正解,非 B008 缺陷
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Form",
+    "fastapi.File",
+    "typer.Argument",
+    "typer.Option",
+]
+
+# ---- pytest ----
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]

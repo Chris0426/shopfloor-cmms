@@ -1,0 +1,14 @@
+{
+  "hold_reasons": [
+    {
+      "code": "WAITING_PARTS",
+      "label": "Waiting for Parts(等待零件)",
+      "is_downtime": true
+    },
+    {
+      "code": "TEST_RUN",
+      "label": "Test Run(試跑,機台運轉中)",
+      "is_downtime": false
+    }
+  ]
+}

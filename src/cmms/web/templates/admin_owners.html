@@ -1,0 +1,78 @@
+{% extends "admin_base.html" %}
+{% from "partials/multi_input.html" import multi_input %}
+{% block content %}
+<div class="adm-head"><h2>{{ t("admin.owners.title") }}</h2></div>
+{% if err %}<div class="adm-banner">{{ t(err) if err.startswith("admin.") else err }}</div>{% endif %}
+{% if ok is not none %}
+<div class="adm-banner" style="background:color-mix(in srgb, var(--st-done) 14%, transparent); color:var(--st-done);">
+  {{ t("admin.owners.ok_pre") }} {{ ok }} {{ t("admin.owners.ok_post") }}
+</div>
+{% endif %}
+<p class="form-hint" style="padding:0 14px 8px;">{{ t("admin.owners.intro") }}</p>
+
+{# ---- 過濾器(搜尋 + 只列缺負責人)---- #}
+<form method="get" action="/admin/owners" class="adm-actions" style="padding:8px 14px;">
+  <input name="q" value="{{ q }}" autocomplete="off"
+         placeholder="{{ t('admin.owners.search_ph') }}" style="min-width:220px;">
+  <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;">
+    <input type="checkbox" name="missing" value="1" {{ 'checked' if missing == '1' else '' }}>
+    {{ t("admin.owners.only_missing") }}
+  </label>
+  <button type="submit">{{ t("admin.owners.filter") }}</button>
+</form>
+
+{% if truncated %}
+<p class="form-hint" style="padding:0 14px 8px;color:var(--st-red);">{{ t("admin.owners.truncated") }}</p>
+{% endif %}
+
+{# ---- 選取 + 指定 ---- #}
+<form method="post" action="/admin/owners">
+  <input type="hidden" name="q" value="{{ q }}">
+  <input type="hidden" name="missing" value="{{ missing }}">
+  <table class="adm-table">
+    <thead>
+      <tr>
+        <th style="width:28px;"><input type="checkbox" id="owner-all" title="{{ t('admin.owners.select_all') }}"></th>
+        <th>{{ t("admin.owners.col_eid") }}</th>
+        <th>{{ t("admin.owners.col_desc") }}</th>
+        <th>{{ t("admin.owners.col_line") }}</th>
+        <th>{{ t("admin.owners.col_owner") }}</th>
+        <th>{{ t("admin.owners.col_pm") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assets %}
+      <tr>
+        <td><input type="checkbox" name="asset_ids" value="{{ a.asset_id }}" class="owner-row"></td>
+        <td class="mono">{{ a.asset_id }}</td>
+        <td>{{ a.description or "—" }}</td>
+        <td>{{ a.line or "—" }}</td>
+        <td>{{ a.owners|join("、") if a.owners else "—" }}</td>
+        <td class="mono">{{ pm_counts.get(a.asset_id, 0) }}</td>
+      </tr>
+      {% endfor %}
+      {% if not assets %}
+      <tr><td colspan="6" class="form-hint" style="padding:12px;">{{ t("admin.owners.empty") }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  <div class="adm-form" style="max-width:520px;">
+    <label>{{ t("admin.owners.owner_label") }}</label>
+    {{ multi_input("owners", [], t("admin.owners.owner_ph"), t) }}
+    <p class="form-hint">{{ t("admin.owners.clear_hint") }}</p>
+    <button type="submit" class="btn-submit" style="margin-top:10px;">{{ t("admin.owners.apply") }}</button>
+  </div>
+</form>
+
+<script>
+/* 表頭「全選」勾選框:切換所有列的勾選狀態(小互動,內嵌即可)。 */
+(function () {
+  var master = document.getElementById("owner-all");
+  if (!master) return;
+  master.addEventListener("change", function () {
+    document.querySelectorAll("input.owner-row").forEach(function (c) { c.checked = master.checked; });
+  });
+})();
+</script>
+{% endblock %}

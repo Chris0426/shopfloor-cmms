@@ -1,0 +1,18 @@
+{# 聯絡人欄位組(admin 新增/編輯共用;`p` = person 或 undefined〔新增〕)(#6b) #}
+<input name="full_name" value="{{ p.full_name or '' if p else '' }}" placeholder="{{ t('sup.f.fullname') }}" style="flex:1 1 100%;">
+<input name="first_name" value="{{ p.first_name or '' if p else '' }}" placeholder="{{ t('sup.f.firstname') }}" style="flex:1 1 46%;">
+<input name="last_name" value="{{ p.last_name or '' if p else '' }}" placeholder="{{ t('sup.f.lastname') }}" style="flex:1 1 46%;">
+<select name="category" style="flex:1 1 46%;padding:8px;border:1px solid var(--line);border-radius:9px;">
+  <option value="">{{ t('sup.category') }}</option>
+  {% for c in categories %}
+  <option value="{{ c.code }}" {% if p and p.category == c.code %}selected{% endif %}>{{ c.label }}</option>
+  {% endfor %}
+</select>
+<input name="email" value="{{ p.email or '' if p else '' }}" placeholder="{{ t('sup.email') }}" style="flex:1 1 46%;">
+<input name="work_phone" value="{{ p.work_phone or '' if p else '' }}" placeholder="{{ t('sup.workphone') }}" style="flex:1 1 46%;">
+<input name="mobile" value="{{ p.mobile or '' if p else '' }}" placeholder="{{ t('sup.mobile') }}" style="flex:1 1 46%;">
+<input name="extension" value="{{ p.extension or '' if p else '' }}" placeholder="{{ t('sup.f.ext') }}" style="flex:1 1 46%;">
+<input name="work_address" value="{{ p.work_address or '' if p else '' }}" placeholder="{{ t('sup.address') }}" style="flex:1 1 100%;">
+<label style="font-size:13px;display:flex;gap:6px;align-items:center;flex:1 1 100%;">
+  <input type="checkbox" name="is_main" value="true" {% if p and p.is_main %}checked{% endif %}> {{ t("sup.f.ismain") }}
+</label>

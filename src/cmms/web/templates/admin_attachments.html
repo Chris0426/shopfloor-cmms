@@ -1,0 +1,79 @@
+{% extends "admin_base.html" %}
+{% block content %}
+<div class="adm-head"><h2>{{ t("admin.att.title") }}</h2></div>
+
+{# 統計:各 owner_type 現存數 #}
+<div class="adm-stats">
+  {% for owner_type, n in counts.items() %}
+  <div class="adm-stat"><span class="adm-stat__n">{{ n }}</span><span class="adm-stat__l">{{ owner_type }}</span></div>
+  {% else %}
+  <p class="form-hint" style="padding:0 14px;">{{ t("admin.att.empty_recent") }}</p>
+  {% endfor %}
+</div>
+
+<div class="adm-head"><h2 style="font-size:17px;">{{ t("admin.att.recent") }}</h2></div>
+{% if recent %}
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.att.file") }}</th>
+      <th>{{ t("admin.att.owner") }}</th>
+      <th>{{ t("admin.att.by") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in recent %}
+    <tr>
+      <td class="mono">{{ a.original_filename or a.r2_key }}</td>
+      <td class="mono">{{ a.owner_type }} · {{ a.owner_id }}</td>
+      <td class="mono">{{ a.created_by or "—" }}</td>
+      <td>
+        <div class="adm-actions">
+          <form method="post" action="/admin/attachments/{{ a.id }}/delete"
+                onsubmit="return confirm('{{ t("admin.att.delete_confirm") }}');">
+            <button type="submit" style="border-color:var(--st-red);color:var(--st-red);">{{ t("admin.att.delete") }}</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{{ t("admin.att.empty_recent") }}</p>
+{% endif %}
+
+<div class="adm-head"><h2 style="font-size:17px;">{{ t("admin.att.deleted") }}</h2></div>
+<p class="form-hint" style="padding:0 14px 6px;">{{ t("admin.att.r2_hint") }}</p>
+{% if deleted %}
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.att.file") }}</th>
+      <th>{{ t("admin.att.owner") }}</th>
+      <th>{{ t("admin.att.by") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in deleted %}
+    <tr>
+      <td class="mono">{{ a.original_filename or a.r2_key }}</td>
+      <td class="mono">{{ a.owner_type }} · {{ a.owner_id }}</td>
+      <td class="mono">{{ a.updated_by or a.created_by or "—" }}</td>
+      <td>
+        <div class="adm-actions">
+          <form method="post" action="/admin/attachments/{{ a.id }}/restore">
+            <button type="submit" style="border-color:var(--st-done);color:var(--st-done);">{{ t("admin.att.restore") }}</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{{ t("admin.att.none_deleted") }}</p>
+{% endif %}
+{% endblock %}
