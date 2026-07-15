@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ t("help.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("help.title") }}{% endblock %}
+{% block content %}
+<div class="inv-detail">
+
+  {% if fb == 'ok' %}<div class="banner banner--ok">{{ t("help.feedback.ok") }}</div>
+  {% elif fb == 'empty' %}<div class="banner banner--err">{{ t("help.feedback.err.empty") }}</div>
+  {% endif %}
+
+  <div class="help-list">
+    {% for doc in docs %}
+    <a class="help-card" href="/app/help/{{ doc.slug }}">
+      <p class="help-card__title">{{ doc.title }}</p>
+      <p class="help-card__summary">{{ doc.summary }}</p>
+      <p class="help-card__meta">{{ t("help.updated") }} {{ doc.updated }}</p>
+    </a>
+    {% endfor %}
+  </div>
+
+  <p class="inv-rel-label" style="margin-top:26px;">{{ t("help.feedback.title") }}</p>
+  <form method="post" action="/app/help/feedback" style="max-width:480px;">
+    <textarea name="message" rows="3" placeholder="{{ t('help.feedback.placeholder') }}"
+              style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;box-sizing:border-box;font:inherit;font-size:14px;resize:vertical;"></textarea>
+    <button type="submit" class="btn-submit">{{ t("help.feedback.submit") }}</button>
+  </form>
+
+</div>
+{% endblock %}

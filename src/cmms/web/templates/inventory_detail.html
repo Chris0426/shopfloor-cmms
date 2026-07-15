@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}{{ item.item_code }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}<span class="mono" style="font-size:15px;color:var(--ink-faint)">{{ item.item_code }}</span>{% endblock %}
+{% block content %}
+{% set rfq_css = {'sent':'ok','drafted':'warn','failed':'err','nosupplier':'info',
+                  'adminonly':'info','saved':'ok','editerr':'err','nochange':'info',
+                  'proposed':'ok','properr':'err','subtypeerr':'err',
+                  'photo_ok':'ok','photo_err':'err'} %}
+{% if rfq and rfq_css.get(rfq) %}
+<div class="banner banner--{{ rfq_css[rfq] }}">{{ t("inv.rfq." ~ rfq) }}</div>
+{% endif %}
+{% if photos %}
+<div class="inv-photos">
+  {% for att_id, url in photos %}<img class="inv-photo" src="{{ url }}" alt="">{% endfor %}
+</div>
+{% endif %}
+
+<div class="inv-detail">
+  <p class="inv-detail-name">{{ item.name or "—" }}
+    {% if item.is_obsolete %}<span class="badge badge--muted">{{ t("inv.obsolete") }}</span>{% endif %}
+  </p>
+  {% if item.description %}<p class="inv-detail-desc">{{ item.description }}</p>{% endif %}
+
+  <dl class="inv-facts">
+    <div>
+      <dt>{{ t("inv.onhand") }}</dt>
+      <dd>{{ item.quantity_on_hand | int if item.quantity_on_hand is not none else "—" }}
+        {% if item.reorder_point is not none and item.quantity_on_hand is not none and item.quantity_on_hand < item.reorder_point %}
+        <span class="badge badge--red">{{ t("inv.reorder") }}</span>{% endif %}</dd>
+    </div>
+    <div><dt>{{ t("inv.location") }}</dt><dd>{{ item.bin_location or "—" }}</dd></div>
+    <div><dt>{{ t("inv.supplier") }}</dt>
+      <dd>{% if supplier_org %}<a href="/app/suppliers/{{ supplier_org.org_id }}">{{ supplier_org.name }}</a>
+          {% else %}{{ item.supplier or "—" }}{% endif %}</dd></div>
+    <div><dt>{{ t("inv.vpart") }}</dt><dd class="mono">{{ item.vendor_part_no or "—" }}</dd></div>
+    <div><dt>{{ t("inv.reorderpt") }}</dt><dd>{{ "%g"|format(item.reorder_point|float) if item.reorder_point is not none else "—" }}</dd></div>
+    <div><dt>{{ t("inv.reorderqty") }}</dt><dd>{{ "%g"|format(item.reorder_quantity|float) if item.reorder_quantity is not none else "—" }}</dd></div>
+  </dl>
+
+  {% if is_admin and item.supplier_org_id %}
+  <!-- 一鍵 RFQ(ADR-026,human-initiated,admin-only):數量 = reorder_quantity 或 reorder_point−on_hand -->
+  <form method="post" action="/app/inventory/{{ item.item_code }}/rfq" style="margin:12px 0 8px;">
+    <input type="hidden" name="nonce" value="{{ nonce }}">
+    <button type="submit" class="btn-submit">{{ t("inv.rfq") }}</button>
+  </form>
+  {% elif is_admin %}
+  <p class="form-hint">{{ t("inv.rfq.nosupplier") }}</p>
+  {% endif %}
+
+  {% if alternatives %}
+  <div class="inv-rel"><p class="inv-rel-label">{{ t("inv.alternatives") }}</p>
+    {% for a in alternatives %}<a class="chip" href="/app/inventory/{{ a }}">{{ a }}</a>{% endfor %}</div>
+  {% endif %}
+  {% if kit %}
+  <div class="inv-rel"><p class="inv-rel-label">{{ t("inv.kit") }}</p>
+    {% for k in kit %}<a class="chip" href="/app/inventory/{{ k }}">{{ k }}</a>{% endfor %}</div>
+  {% endif %}
+  {% if parent_kits %}
+  <div class="inv-rel"><p class="inv-rel-label">{{ t("inv.parent_kits") }}</p>
+    {% for pk in parent_kits %}<a class="chip" href="/app/inventory/{{ pk }}">{{ pk }}</a>{% endfor %}</div>
+  {% endif %}
+  {% if subtypes %}
+  <div class="inv-rel"><p class="inv-rel-label">{{ t("inv.subtypes") }}</p>
+    {% for s in subtypes %}<span class="chip">{{ s }}</span>{% endfor %}</div>
+  {% endif %}
+</div>
+
+{% if pending_item_edit %}
+<div class="banner banner--info">{{ t("inv.rfq.editpending") }}</div>
+{% endif %}
+{% if is_admin %}
+{# ---- 品項管理(admin):單一入口,收攏四個各自獨立的治理操作(端點不合併)---- #}
+<details class="fold" {% if rfq in ('editerr','saved','nochange','subtypeerr','photo_ok','photo_err') %}open{% endif %}>
+  <summary>{{ t("inv.admin") }}</summary>
+  <div class="fold__body" style="display:flex;flex-direction:column;gap:8px;">
+
+    {# 主檔編輯(governed update_item) #}
+    <details class="fold" {% if rfq in ('editerr', 'saved') %}open{% endif %}>
+      <summary>{{ t("inv.edit") }}</summary>
+      <form class="fold__body" method="post" action="/app/inventory/{{ item.item_code }}/update">
+        <div class="inline-form">
+          {% include "partials/item_fields.html" %}
+          <div style="flex:1 1 100%;display:flex;gap:8px;">
+            <button type="submit" class="btn-primary" style="flex:1;">{{ t("admin.action.save") }}</button>
+            {# 取消 = 退回乾淨明細(重載,fold 收合)—— 可靠退出,不靠 JS(#7a) #}
+            <a href="/app/inventory/{{ item.item_code }}" class="btn-ghost">{{ t("action.cancel") }}</a>
+          </div>
+        </div>
+      </form>
+    </details>
+
+    {# 適用機種編輯(#7d;複選既有 canonical 子類型,覆寫 junction) #}
+    <details class="fold" {% if rfq == 'subtypeerr' %}open{% endif %}>
+      <summary>{{ t("inv.subtypes.edit") }}</summary>
+      <form class="fold__body" method="post" action="/app/inventory/{{ item.item_code }}/subtypes">
+        <select name="subtypes" multiple size="8"
+                style="width:100%;padding:6px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box;">
+          {% for s in all_subtypes %}
+          <option value="{{ s.code }}" {% if s.code in subtypes %}selected{% endif %}>{{ s.code }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn-primary" style="flex:1 1 100%;">{{ t("admin.action.save") }}</button>
+        <p class="form-hint" style="margin:0;">{{ t("inv.subtypes.hint") }}</p>
+      </form>
+    </details>
+
+    {# 盤點調整(記 ADJUST 帳,必附事由;不裸改庫存,ADR-005) #}
+    <details class="fold" {% if rfq == 'nochange' %}open{% endif %}>
+      <summary>{{ t("inv.adjust") }}</summary>
+      <form class="fold__body" method="post" action="/app/inventory/{{ item.item_code }}/adjust">
+        <input type="hidden" name="nonce" value="{{ nonce }}">
+        <div class="inline-form">
+          <input name="new_quantity" required type="number" min="0" step="any" inputmode="decimal" placeholder="{{ t('inv.adjust.newqty') }}" style="flex:1 1 30%;">
+          {# 常用事由下拉 + 可自由輸入(datalist;值仍自由文字落稽核,不做 enum)(#7f) #}
+          <input name="reason" required list="adjust-reasons" placeholder="{{ t('inv.adjust.reason') }}" style="flex:2 1 60%;">
+          <datalist id="adjust-reasons">
+            <option value="{{ t('inv.adjust.r.purchase') }}"></option>
+            <option value="{{ t('inv.adjust.r.count') }}"></option>
+            <option value="{{ t('inv.adjust.r.scrap') }}"></option>
+            <option value="{{ t('inv.adjust.r.return') }}"></option>
+            <option value="{{ t('inv.adjust.r.missinglog') }}"></option>
+          </datalist>
+          <button type="submit" class="btn-primary">{{ t("admin.action.save") }}</button>
+        </div>
+        <p class="form-hint" style="margin:0;">{{ t("inv.adjust.hint") }}</p>
+      </form>
+    </details>
+
+    {# 照片管理(換照片 = 逐張刪除 + 上傳新照片;軟刪,R2 保留供稽核) #}
+    <details class="fold" {% if rfq in ('photo_ok','photo_err') %}open{% endif %}>
+      <summary>{{ t("inv.photos.manage") }}</summary>
+      <div class="fold__body">
+        {% if photos %}
+        <div class="inv-photos" style="margin-bottom:8px;">
+          {% for att_id, url in photos %}
+          <div style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;margin:0 6px 6px 0;">
+            <img class="inv-photo" src="{{ url }}" alt="">
+            <form method="post" action="/app/inventory/{{ item.item_code }}/photos/{{ att_id }}/delete" style="margin:0;">
+              <button type="submit" class="btn-ghost" style="font-size:12px;padding:2px 8px;">{{ t("inv.photos.delete") }}</button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <form method="post" action="/app/inventory/{{ item.item_code }}/photos" enctype="multipart/form-data">
+          <input type="file" name="photos" accept="image/*" multiple style="flex:1 1 100%;">
+          <button type="submit" class="btn-primary" style="flex:1 1 100%;margin-top:6px;">{{ t("inv.photos.upload") }}</button>
+        </form>
+        <p class="form-hint" style="margin:6px 0 0;">{{ t("inv.photos.hint") }}</p>
+      </div>
+    </details>
+
+  </div>
+</details>
+{% elif not pending_item_edit %}
+{# ---- 主檔修改提案(engineer;裁決 #3 後續:提案 → admin 審 dry-run diff 後 confirm)---- #}
+<details class="fold" {% if rfq in ('properr',) %}open{% endif %}>
+  <summary>{{ t("inv.propose") }}</summary>
+  <form class="fold__body" method="post" action="/app/inventory/{{ item.item_code }}/propose-update">
+    <div class="inline-form">
+      {% include "partials/item_fields.html" %}
+      <div style="flex:1 1 100%;display:flex;gap:8px;">
+        <button type="submit" class="btn-primary" style="flex:1;">{{ t("inv.propose.submit") }}</button>
+        <a href="/app/inventory/{{ item.item_code }}" class="btn-ghost">{{ t("action.cancel") }}</a>
+      </div>
+    </div>
+    <p class="form-hint" style="margin:0;">{{ t("inv.propose.hint") }}</p>
+  </form>
+</details>
+{% endif %}
+{% endblock %}

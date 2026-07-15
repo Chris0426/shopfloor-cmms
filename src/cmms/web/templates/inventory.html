@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.inventory") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.inventory") }}{% endblock %}
+{% block content %}
+{% if msg == 'adminonly' %}<div class="banner banner--info">{{ t("inv.rfq.adminonly") }}</div>{% endif %}
+{% if is_admin %}
+<p style="padding:10px 16px 0;margin:0;">
+  <a href="/app/inventory/new" class="btn-submit" style="display:inline-block;width:auto;padding:7px 14px;text-decoration:none;">+ {{ t("inv.create.title") }}</a>
+</p>
+{% endif %}
+<form method="get" action="/app/inventory" class="inv-search">
+  <input name="q" value="{{ q or '' }}" placeholder="{{ t('inv.search') }}" autofocus
+         hx-get="/app/inventory" hx-trigger="input changed delay:250ms, search"
+         hx-target="#inv-results" hx-include="closest form" hx-push-url="true">
+  {% if low %}<input type="hidden" name="low" value="1">{% endif %}
+  <button type="submit" aria-label="search">
+    <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+  </button>
+</form>
+
+{# filter chips 在 swap target 內(由 partial 渲染):即時過濾後 chip 連結的 q 才會跟著更新 #}
+<div id="inv-results">
+  {% include "partials/inv_list.html" %}
+</div>
+{% endblock %}

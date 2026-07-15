@@ -1,0 +1,31 @@
+{# 試算結果:符合筆數 + 前 5 列預覽(欄=實際會匯出的欄,已依角色過濾)+ 下載鈕。
+   壞日期等 → 誠實 banner(不 500)。`export_cell` 為顯示格式化 global。 #}
+{% if error %}
+<div class="export-banner export-banner--err">{{ t("export." ~ error) }}</div>
+{% else %}
+<p class="export-count">
+  {{ t("export.preview.matched") }} <strong>{{ count }}</strong> {{ t("export.preview.rows") }}
+  {% if count > 5 %}· {{ t("export.preview.first5") }}{% endif %}
+</p>
+{% if rows %}
+<div class="export-table-wrap">
+  <table class="export-table">
+    <thead>
+      <tr>{% for c in columns %}<th>{{ t(c.label_key) }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>{% for c in columns %}<td>{{ export_cell(row.get(c.key)) }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<a class="btn-submit export-download" href="{{ download_url }}" download>
+  <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M4 19h16"/></svg>
+  {{ t("export.download") }}
+</a>
+<p class="form-hint">{{ t("export.download_hint") }}</p>
+{% else %}
+<p class="empty">{{ t("export.empty") }}</p>
+{% endif %}
+{% endif %}

@@ -1,0 +1,24 @@
+{# 助理回覆 partial(ADR-020)。兩用途:
+   · phase 2 回應(POST /app/assistant/{id}/reply):以 outerHTML 換掉 pending 元素 →
+     成功 = 單一 bot 泡泡;失敗 = 錯誤泡泡 + 重試鈕(同 message_id 重送、換掉錯誤泡泡本身)。
+   · phase 1 誠實系統泡泡(disabled / limit):beforeend 進 #assistant-conv。
+   ★ reply_html 已由 cmms 側 assistant_render 安全渲染(先整段 escape,再開白名單連結/粗體),
+   故以 |safe 輸出。scoped token / gateway secret 絕不出現在此(只在 route → gateway 的 body)。 #}
+{% if error == "disabled" %}
+<div class="chat-msg chat-msg--sys">{{ t("assistant.disabled") }}</div>
+{% elif error == "limit" %}
+<div class="chat-msg chat-msg--sys chat-msg--err">{{ t("assistant.limit") }}</div>
+{% elif error %}
+<div class="chat-error">
+  <div class="chat-msg chat-msg--sys chat-msg--err">{{ t("assistant.error") }}</div>
+  {% if retry_id %}
+  <button type="button" class="dock__retry"
+          hx-post="/app/assistant/{{ conversation_id }}/reply"
+          hx-vals='{"message_id": {{ retry_id }}}'
+          hx-swap="outerHTML" hx-target="closest .chat-error"
+          hx-disabled-elt="#assistant-form button">{{ t("assistant.retry") }}</button>
+  {% endif %}
+</div>
+{% elif reply_html %}
+<div class="chat-msg chat-msg--bot">{{ reply_html|safe }}</div>
+{% endif %}

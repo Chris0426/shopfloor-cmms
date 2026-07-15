@@ -1,0 +1,17 @@
+{# 會話切換列(開啟中對話 chips)。**恆渲染**容器(id=assistant-sessions)——
+   panel 首載與 phase 1 OOB 更新共用此 markup(避免兩份漂移)。
+   `oob=True`(phase 1 turn 回應)→ 帶 hx-swap-oob,htmx 據 id 就地換掉切換列 =
+   修「新會話送出後上方標籤不出現」。無會話 → 隱藏空 bar(仍留在 DOM 供 OOB 目標)。 #}
+<div id="assistant-sessions" class="dock__sessions" role="tablist"
+     {% if oob %}hx-swap-oob="true"{% endif %}
+     {% if not conversations %}style="display:none"{% endif %}
+     aria-label="{{ t('assistant.sessions') }}">
+  {% for c in conversations %}
+  <button type="button" role="tab" title="{{ c.title }}"
+          class="dock__session {{ 'is-current' if c.id == current_id else '' }}"
+          aria-selected="{{ 'true' if c.id == current_id else 'false' }}"
+          hx-get="/app/assistant/{{ c.id }}" hx-target="#assistant-panel" hx-swap="innerHTML">
+    {{ c.title|truncate(26, True) }}
+  </button>
+  {% endfor %}
+</div>

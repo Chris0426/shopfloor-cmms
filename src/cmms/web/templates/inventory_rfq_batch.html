@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ t("inv.rfq_batch") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("inv.rfq_batch") }}{% endblock %}
+{% block content %}
+{# 上一次送出的真實結果(sent/drafted/failed;不再一律報成功) #}
+{% if sent == "sent" %}<div class="banner banner--ok">{{ t("inv.rfq_batch.sent") }}</div>
+{% elif sent == "drafted" %}<div class="banner banner--warn">{{ t("inv.rfq.drafted") }}</div>
+{% elif sent %}<div class="banner banner--err">{{ t("inv.rfq.failed") }}</div>{% endif %}
+{% if not smtp_ok %}<div class="banner banner--warn">{{ t("inv.rfq.drafted") }}</div>{% endif %}
+<p class="form-hint" style="margin:10px 16px 0;">{{ t("inv.rfq_batch.hint") }}</p>
+
+{% if drafts %}
+{% for d in drafts %}
+<div class="rfq-group">
+  <h3>{{ d.supplier_name }}</h3>
+  <p class="form-hint" style="margin:0;">{{ d.recipient_email or t("inv.rfq_batch.nomail") }}</p>
+  <ul class="rfq-lines">
+    {% for code, qty in d.lines %}
+    <li><a class="mono" href="/app/inventory/{{ code }}">{{ code }}</a> × {{ "%g"|format(qty|float) }}</li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="/app/inventory-rfq">
+    <input type="hidden" name="nonce" value="{{ nonce }}-{{ d.supplier_org_id }}">
+    <input type="hidden" name="supplier_org_id" value="{{ d.supplier_org_id }}">
+    <input type="hidden" name="item_codes" value="{{ d.lines | map(attribute=0) | join(',') }}">
+    <button type="submit" class="btn-submit" style="width:auto;padding:9px 16px;">{{ t("inv.rfq_batch.send") }}</button>
+  </form>
+</div>
+{% endfor %}
+{% else %}
+<p class="empty">{{ t("inv.rfq_batch.empty") }}</p>
+{% endif %}
+{% endblock %}

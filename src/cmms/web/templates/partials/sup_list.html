@@ -1,0 +1,25 @@
+{# 供應商結果區塊(整頁 include + HTMX 即時過濾共用) #}
+{% if not q %}<p class="form-hint" style="margin:12px 16px 4px;">{{ t("sup.browse_hint") }}</p>{% endif %}
+{% if orgs %}
+<div class="inv-list">
+  {% for o in orgs %}
+  <a class="inv-card" href="/app/suppliers/{{ o.org_id }}">
+    <div class="inv-thumb">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V7l8-4 8 4v14"/><line x1="3" y1="21" x2="21" y2="21"/><path d="M10 21v-5h4v5"/></svg>
+    </div>
+    <div class="inv-body">
+      <div class="inv-top">
+        <span class="mono inv-code">{{ o.org_id }}</span>
+        {% if o.org_type %}<span class="badge badge--muted">{{ o.org_type }}</span>{% endif %}
+        {% if not o.is_active %}<span class="badge badge--muted">{{ t("sup.inactive") }}</span>{% endif %}
+      </div>
+      <p class="inv-name">{{ o.name }}</p>
+      {% if o.address %}<p class="inv-meta">{{ o.address }}</p>{% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">{{ t("sup.empty") }}</p>
+{% endif %}
+{% include "partials/pager.html" %}

@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "partials/multi_input.html" import multi_input %}
+{% block title %}{{ t("nav.report") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.report") }}{% endblock %}
+{% block content %}
+<form method="post" action="/app/report" enctype="multipart/form-data">
+  {% if error == 'retired' %}<p class="login-error" style="margin:14px 16px 0;">{{ t("report.retired") }}</p>
+  {% elif error == 'owner_missing' %}<p class="login-error" style="margin:14px 16px 0;">{{ t("report.owner_missing") }}</p>
+  {% elif error %}<p class="login-error" style="margin:14px 16px 0;">{{ t("report.error") }}</p>{% endif %}
+
+  <div class="form-sect">
+    <label class="form-label" for="asset_id">{{ t("report.asset") }}</label>
+    <div style="display:flex;gap:8px;align-items:stretch;">
+      <input class="form-input mono" id="asset_id" name="asset_id" value="{{ eid or '' }}"
+             placeholder="EID-…" required {% if not eid %}autofocus{% endif %} style="flex:1;"
+             data-suggest="asset" data-suggest-strict data-strict-msg="{{ t('strict.asset') }}"
+             data-owner-autofill="report-owners"
+             autocomplete="off">
+      <button type="button" id="scan-btn" hidden
+              style="border:1px solid var(--line);border-radius:9px;background:transparent;padding:0 14px;cursor:pointer;white-space:nowrap;">
+        {{ t("report.scan") }}
+      </button>
+    </div>
+    <video id="scan-video" hidden playsinline muted
+           style="width:100%;max-height:280px;border-radius:12px;margin-top:8px;background:#000;"></video>
+    <p class="form-hint">{{ t("report.asset_hint") }}</p>
+  </div>
+
+  <div class="form-sect">
+    <label class="form-label" for="brief_description">{{ t("report.desc") }} <span class="form-optional">{{ t("report.desc_optional") }}</span></label>
+    <textarea class="form-input" id="brief_description" name="brief_description" rows="4"
+              placeholder="{{ t('report.desc_ph') }}" {% if eid %}autofocus{% endif %}>{{ brief or '' }}</textarea>
+    <p class="form-hint">{{ t("report.desc_optional_hint") }}</p>
+  </div>
+
+  <div class="form-sect">
+    <label class="form-label">{{ t("report.owner") }}</label>
+    {{ multi_input("assignees", owner_val, t("report.owner_ph"), t, container_id="report-owners") }}
+    <p class="form-hint">{{ t("report.owner_hint") }}</p>
+  </div>
+
+  <div class="form-sect">
+    <label class="form-label" for="photos">{{ t("report.photo") }}</label>
+    <input class="form-file" id="photos" type="file" name="photos" accept="image/*" multiple>
+  </div>
+
+  <div class="form-submit">
+    <button type="submit" class="btn-submit">{{ t("report.submit") }}</button>
+    <p class="form-hint" style="text-align:center; margin-top:8px;">{{ t("report.after") }}</p>
+  </div>
+</form>
+
+<script>
+/* 條碼掃描填 EID(7 點回饋 #1;機台標籤 = 1D 條碼編 EID-xxxxx)。
+   兩層引擎:① BarcodeDetector(Android/ChromeOS 原生)② ZXing(/static/zxing.min.js,
+   桌面 Chrome / iPhone 等無原生 API 時**點擊才**動態載入,離線 vendored、不靠 CDN)。
+   完全無相機 API 才隱藏按鈕;拒授權 → 停用按鈕,手動輸入照常。 */
+(function () {
+  var btn = document.getElementById("scan-btn");
+  var video = document.getElementById("scan-video");
+  var input = document.getElementById("asset_id");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  btn.hidden = false;
+  var stream = null, zxingReader = null;
+
+  function found(text) {
+    input.value = (text || "").trim().toUpperCase();
+    stop();
+  }
+  function stop() {
+    if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    video.hidden = true;
+  }
+  function loadZXing() {
+    return new Promise(function (resolve, reject) {
+      if (window.ZXing) { resolve(); return; }
+      var s = document.createElement("script");
+      s.src = "/static/zxing.min.js";
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  async function scanNative() {
+    var detector = new BarcodeDetector();
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    video.srcObject = stream; video.hidden = false; await video.play();
+    (async function tick() {
+      if (!stream) return;
+      try {
+        var codes = await detector.detect(video);
+        if (codes.length) { found(codes[0].rawValue); return; }
+      } catch (e) { /* 個別幀失敗:續掃 */ }
+      requestAnimationFrame(tick);
+    })();
+  }
+  async function scanZXing() {
+    await loadZXing();
+    zxingReader = new ZXing.BrowserMultiFormatReader();
+    video.hidden = false;
+    var mark = zxingReader.decodeFromConstraints || null;
+    if (mark) {
+      await zxingReader.decodeFromConstraints(
+        { video: { facingMode: "environment" } }, video,
+        function (result) { if (result) found(result.getText()); }
+      );
+    } else {
+      await zxingReader.decodeFromVideoDevice(null, video,
+        function (result) { if (result) found(result.getText()); });
+    }
+  }
+  btn.addEventListener("click", async function () {
+    if (stream || zxingReader) { stop(); return; }
+    try {
+      if ("BarcodeDetector" in window) { await scanNative(); }
+      else { await scanZXing(); }
+    } catch (e) { stop(); btn.disabled = true; }  /* 拒授權/無相機:停用,手動輸入照常 */
+  });
+})();
+</script>
+{% endblock %}

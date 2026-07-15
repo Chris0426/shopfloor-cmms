@@ -1,0 +1,83 @@
+# Local demo stack: PostgreSQL + the CMMS app, populated with SYNTHETIC data.
+#
+#   docker compose up --build          # db -> migrations -> app + one-shot seed
+#   open http://localhost:8000         # login: admin / admin123
+#   docker compose down -v             # tear down, including the database volume
+#
+# The values below are THROWAWAY DEMO SECRETS. They exist so that the app's
+# fail-closed security checks stay switched on (nothing is disabled to make the
+# demo work) — never reuse them anywhere real.
+#
+# Deliberately NOT configured: Hermes (LLM assistant gateway), Telegram, Jira,
+# SMTP and R2. The app starts fine without them and reports those features as
+# unconfigured instead of pretending they work.
+
+x-app-env: &app-env
+  CMMS_APP_ENV: local
+  CMMS_DATABASE_URL: postgresql+asyncpg://cmms:cmms@db:5432/cmms
+  # Static bearer token for the service-to-service JSON read API (/work-orders,
+  # /assets, ...). Set, not removed: with no token AND app_env=production the API
+  # fails closed with 503 — we keep the check and hand it a throwaway value.
+  CMMS_READ_API_TOKEN: demo-read-api-token-not-a-secret
+  # Envelope-encryption master key for the per-user credential vault (Fernet).
+  # Throwaway demo key; the vault stays fail-closed without one.
+  CMMS_CREDENTIAL_MASTER_KEY: bWRHroKgiH24S951s3KsYL5vWgoRzcGxOksnwCopvls=
+  CMMS_PUBLIC_BASE_URL: http://localhost:8000
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: cmms
+      POSTGRES_PASSWORD: cmms
+      POSTGRES_DB: cmms
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cmms -d cmms"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    image: shopfloor-cmms:demo
+    environment: *app-env
+    # Apply migrations, then serve. Alembic is idempotent, so restarts are safe.
+    command: >
+      sh -c "alembic upgrade head &&
+             exec uvicorn cmms.api.app:app --host 0.0.0.0 --port 8080"
+    ports:
+      - "8000:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request;urllib.request.urlopen('http://localhost:8080/health').read()
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  # One-shot: generate the synthetic CSVs, run every loader in dependency order,
+  # create the demo accounts, and play a small live scenario. Idempotent enough to
+  # re-run: the loaders upsert, and account creation is skipped if it already ran.
+  seed:
+    image: shopfloor-cmms:demo
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      <<: *app-env
+      DEMO_DATA_DIR: /tmp/demo-data   # container-local; no host write permissions needed
+    volumes:
+      - ./scripts:/app/scripts:ro
+    command: ["bash", "/app/scripts/seed_demo.sh"]
+    restart: "no"
+
+volumes:
+  pgdata:

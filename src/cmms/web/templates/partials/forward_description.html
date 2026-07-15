@@ -1,0 +1,27 @@
+{# 轉發頁 description 區塊(單一真相:GET 首載與 AI 生成後皆 include 此檔)。
+   反饋 1/2/3:預填留空、由「AI 總結工作紀錄」按鈕經 Hermes 生成敘事。
+   HTMX 以 outerHTML 換掉整個 #fwd-desc-wrap(textarea 填生成/原有文字 + AI 按鈕 + hints)。
+   assistant_enabled = Hermes gateway 已配置(由 _render 提供);ai_error = 上次生成的錯誤碼。 #}
+<div id="fwd-desc-wrap">
+  <label for="fwd-desc" style="display:block;font-size:12px;color:var(--ink-soft);margin:10px 0 4px;">{{ t("wo.forward.description") }}</label>
+  <textarea id="fwd-desc" name="description" rows="6" class="txt-input" required
+            style="width:100%;" placeholder="{{ t('wo.forward.desc_ph') }}">{{ description }}</textarea>
+  {% if ai_error == "disabled" %}
+  <p class="form-hint">{{ t("wo.forward.ai_disabled") }}</p>
+  {% elif ai_error %}
+  <p class="form-hint" style="color:var(--st-red);">{{ t("wo.forward.ai_failed") }}</p>
+  {% endif %}
+  {% if assistant_enabled %}
+  <div class="fwd-ai" style="margin-top:6px;">
+    <button type="button" class="btn-ghost fwd-ai-btn"
+            hx-post="/app/work-orders/{{ work_order_no }}/forward/ai-description"
+            hx-include="#fwd-wos, #fwd-desc"
+            hx-target="#fwd-desc-wrap" hx-swap="outerHTML"
+            hx-disabled-elt="this">
+      <span class="fwd-ai-btn__label">{{ t("wo.forward.ai_generate") }}</span>
+      <span class="fwd-ai-btn__busy">{{ t("wo.forward.ai_generating") }}</span>
+    </button>
+    <span class="form-hint" style="margin-left:8px;">{{ t("wo.forward.ai_overwrite") }}</span>
+  </div>
+  {% endif %}
+</div>

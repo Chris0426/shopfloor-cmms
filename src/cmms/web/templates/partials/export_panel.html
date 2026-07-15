@@ -1,0 +1,45 @@
+{# 匯出中心:當前資料集的過濾表單 + 預覽區。試算走 HTMX(hx-get preview → 換 #export-preview)。
+   `spec`=當前 DatasetSpec;`options_map`=各 chips 過濾器已解析為 (value, 顯示文字) 清單。 #}
+<div class="export-panel">
+  <p class="export-panel__title">{{ t(spec.title_key) }}</p>
+  <p class="form-hint">{{ t(spec.desc_key) }}</p>
+
+  {# 改過濾條件後預覽會被 app.js 清空(data-export-form),提示重新試算 #}
+  <form class="export-filters" data-export-form
+        hx-get="/app/export/{{ spec.slug }}/preview"
+        hx-target="#export-preview" hx-swap="innerHTML">
+    <div class="export-filter-grid">
+      {% for f in spec.filters %}
+      <div class="export-field">
+        <label class="export-field__label">{{ t(f.label_key) }}</label>
+        {% if f.kind == "date" %}
+        <input type="date" name="{{ f.key }}" class="export-input">
+        {% elif f.kind == "suggest" %}
+        <input name="{{ f.key }}" class="export-input" data-suggest="{{ f.suggest }}"
+               autocomplete="off" placeholder="{{ t('export.any') }}">
+        {% elif f.kind == "tristate" %}
+        <select name="{{ f.key }}" class="export-input">
+          {% for val, lkey in f.options %}
+          <option value="{{ val }}">{{ t(lkey) }}</option>
+          {% endfor %}
+        </select>
+        {% elif f.kind == "chips" %}
+        <div class="export-chips">
+          {% for val, disp in options_map.get(f.key, []) %}
+          <label class="chip export-chip">
+            <input type="checkbox" name="{{ f.key }}" value="{{ val }}"> {{ disp }}
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <input name="{{ f.key }}" class="export-input" autocomplete="off"
+               placeholder="{{ t('export.any') }}">
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <button type="submit" class="btn-submit export-run">{{ t("export.run") }}</button>
+  </form>
+
+  <div id="export-preview" class="export-preview"></div>
+</div>

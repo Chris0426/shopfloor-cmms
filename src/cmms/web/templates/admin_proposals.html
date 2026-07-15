@@ -1,0 +1,116 @@
+{% extends "admin_base.html" %}
+{% block content %}
+{% if err %}<div class="adm-banner">{{ err }}</div>{% endif %}
+<div class="adm-head"><h2>{{ t("admin.prop.title") }}</h2></div>
+<p class="form-hint" style="padding:0 14px 6px;">{{ t("admin.prop.hint") }}</p>
+{% if proposals %}
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.prop.op") }}</th>
+      <th>{{ t("admin.prop.params") }}</th>
+      <th>{{ t("admin.prop.by") }}</th>
+      <th>{{ t("admin.prop.expires") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in proposals %}
+    <tr>
+      <td>
+        <span class="badge badge--{{ 'red' if p.operation == 'void_work_order' else 'prog' }}">{{ t("admin.prop.op." ~ p.operation) }}</span>
+        {% if p.params.get('work_order_no') %}
+        <br><a class="mono" href="/app/work-orders/{{ p.params['work_order_no'] }}">WO-{{ p.params['work_order_no'] }}</a>
+        {% endif %}
+        {% if p.params.get('item_code') %}
+        <br><a class="mono" href="/app/inventory/{{ p.params['item_code'] }}">{{ p.params['item_code'] }}</a>
+        {% endif %}
+      </td>
+      <td style="max-width:340px;">
+        {% if p.params.get('reason') %}<p style="margin:0 0 4px;font-size:13px;">{{ p.params['reason'] }}</p>{% endif %}
+        {# update_item 提案:人讀得懂的欄位差異(old → new;dry-run diff 只列會變的欄位) #}
+        {% if p.dry_run_diff and p.dry_run_diff.get('changes') is mapping %}
+        <ul style="margin:0 0 4px;padding-left:16px;font-size:12px;">
+          {% for field, ch in p.dry_run_diff['changes'].items() %}
+          <li><span class="mono">{{ field }}</span>: {{ ch['from'] }} → <strong>{{ ch['to'] }}</strong></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        <details>
+          <summary class="form-hint" style="cursor:pointer;">{{ t("admin.prop.raw") }}</summary>
+          <code style="font-size:11px;display:block;overflow-x:auto;">{{ p.params | tojson }}</code>
+          {% if p.dry_run_diff %}<code style="font-size:11px;display:block;overflow-x:auto;">diff: {{ p.dry_run_diff | tojson }}</code>{% endif %}
+        </details>
+      </td>
+      <td class="mono">{{ p.proposed_by }}</td>
+      <td>{{ p.expires_at.strftime("%m-%d %H:%M") }}</td>
+      <td>
+        <div class="adm-actions">
+          <form method="post" action="/admin/proposals/{{ p.pending_token }}/confirm">
+            <button type="submit" style="border-color:var(--st-done);color:var(--st-done);">{{ t("admin.prop.confirm") }}</button>
+          </form>
+          <form method="post" action="/admin/proposals/{{ p.pending_token }}/reject">
+            <button type="submit" style="border-color:var(--st-red);color:var(--st-red);">{{ t("admin.prop.reject") }}</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{{ t("admin.prop.empty") }}</p>
+<p class="form-hint" style="text-align:center;">{{ t("admin.prop.sources") }}</p>
+{% endif %}
+
+{# ---- 使用者回饋(內部規格 說明中心回饋落庫)---- #}
+<div class="adm-head" style="margin-top:34px;"><h2>{{ t("admin.feedback.title") }}</h2></div>
+{% if feedback_open %}
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.feedback.message") }}</th>
+      <th>{{ t("admin.feedback.by") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in feedback_open %}
+    <tr>
+      <td style="max-width:420px;white-space:pre-wrap;">{{ f.message }}</td>
+      <td>
+        <span class="mono">{{ f.user_id }}</span>
+        <br><span class="form-hint">{{ f.created_at.strftime("%m-%d %H:%M") }}</span>
+      </td>
+      <td>
+        <form method="post" action="/admin/feedback/{{ f.id }}/resolve">
+          <button type="submit" style="border-color:var(--st-done);color:var(--st-done);">{{ t("admin.feedback.resolve") }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{{ t("admin.feedback.empty") }}</p>
+{% endif %}
+
+{% if feedback_resolved %}
+<details class="fold" style="margin:14px;">
+  <summary class="form-hint" style="cursor:pointer;">{{ t("admin.feedback.resolved_recent") }}</summary>
+  <table class="adm-table" style="margin-top:8px;">
+    <tbody>
+      {% for f in feedback_resolved %}
+      <tr>
+        <td style="max-width:420px;white-space:pre-wrap;">{{ f.message }}</td>
+        <td>
+          <span class="mono">{{ f.user_id }}</span>
+          <br><span class="form-hint">{{ t("admin.feedback.by") }} {{ f.resolved_by }} · {{ f.resolved_at.strftime("%m-%d %H:%M") }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{# 助理 dock 內容(ADR-020;對話落 DB)。經 /app/assistant/panel lazy-load,整頁導覽後
+   自動還原當前對話 = 修「換頁對話全滅」重大缺失。
+   結構:會話切換列(開啟中對話)+ 當前對話訊息 + 送出表單 + 結束對話鈕。
+   ★ 助理訊息經 render_reply 安全渲染(已 escape;連結白名單 /app);user 訊息維持純 escape。 #}
+{# 切換列:恆渲染容器(供 phase 1 OOB 目標),抽成可重用 partial 避免 markup 漂移 #}
+{% include "partials/assistant_sessions.html" %}
+
+<div class="dock__conv" id="assistant-conv">
+  <p class="dock__disclaimer">{{ t("assistant.disclaimer") }}</p>
+  {% for m in messages %}
+    {% if m.role == "user" %}
+  <div class="chat-msg chat-msg--user">{{ m.content }}</div>
+    {% else %}
+  <div class="chat-msg chat-msg--bot">{{ render_reply(m.content)|safe }}</div>
+    {% endif %}
+  {% endfor %}
+  {% if messages and messages[-1].role == "user" %}
+  {# 懸掛 user 訊息(最後一則是 user、無後續 assistant → 上輪失敗或 phase 2 尚未完成):
+     渲染同規格 pending/hx-trigger=load 觸發器 → 轉跳回來自動續跑,或撿回伺服端已完成但
+     前端沒收到的回覆(配合 phase 2 冪等判定:直接回既存回覆,不重打 gateway)。 #}
+  <div class="chat-msg chat-msg--pending" data-assistant-pending
+       hx-post="/app/assistant/{{ current_id }}/reply"
+       hx-vals='{"message_id": {{ messages[-1].id }}}'
+       hx-trigger="load" hx-swap="outerHTML"
+       hx-disabled-elt="#assistant-form button">
+    <span></span><span></span><span></span>
+  </div>
+  {% endif %}
+  {% if not messages %}
+  <p class="dock__empty">{{ t("assistant.empty") }}</p>
+  {% endif %}
+</div>
+
+<form class="dock__form" id="assistant-form" autocomplete="off"
+      hx-post="/app/assistant" hx-target="#assistant-conv" hx-swap="beforeend">
+  {# OOB 更新目標:每輪回覆會把新 conversation_id 換進此欄(首則訊息後綁定新會話) #}
+  <input type="hidden" id="assistant-conv-id" name="conversation_id" value="{{ current_id }}">
+  <input class="dock__field" name="message" required
+         placeholder="{{ t('assistant.placeholder') }}" aria-label="{{ t('assistant.placeholder') }}">
+  <button type="submit" class="dock__send" aria-label="{{ t('assistant.send') }}">
+    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/></svg>
+  </button>
+</form>
+
+{% if current_id %}
+<form class="dock__endbar" hx-post="/app/assistant/{{ current_id }}/close"
+      hx-target="#assistant-panel" hx-swap="innerHTML">
+  <button type="submit" class="dock__end">{{ t("assistant.end") }}</button>
+</form>
+{% endif %}

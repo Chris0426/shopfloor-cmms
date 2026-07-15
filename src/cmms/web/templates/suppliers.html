@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.suppliers") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.suppliers") }}{% endblock %}
+{% block content %}
+{% if msg == 'adminonly' %}<div class="banner banner--info">{{ t("sup.msg.adminonly.create") }}</div>{% endif %}
+{% if is_admin %}
+<p style="padding:10px 16px 0;margin:0;">
+  <a href="/app/suppliers/new" class="btn-submit" style="display:inline-block;width:auto;padding:7px 14px;text-decoration:none;">+ {{ t("sup.create.title") }}</a>
+</p>
+{% endif %}
+<form method="get" action="/app/suppliers" class="inv-search">
+  <input name="q" value="{{ q or '' }}" placeholder="{{ t('sup.search') }}" autofocus
+         hx-get="/app/suppliers" hx-trigger="input changed delay:250ms, search"
+         hx-target="#sup-results" hx-include="closest form" hx-push-url="true">
+  <button type="submit" aria-label="search">
+    <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+  </button>
+</form>
+
+<div id="sup-results">
+  {% include "partials/sup_list.html" %}
+</div>
+{% endblock %}

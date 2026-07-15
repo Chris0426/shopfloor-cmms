@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ t("wo.queue.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("wo.queue.title") }}{% endblock %}
+{% block content %}
+<form method="get" action="/app/work-orders" class="inv-search">
+  {# 21.5k 列 5 欄 ilike 全掃描:單字元不觸發(0 字=清除照常),省每鍵一次 seq scan #}
+  <input name="q" value="{{ q or '' }}" placeholder="{{ t('wo.search') }}"
+         hx-get="/app/work-orders"
+         hx-trigger="input[target.value.length==0||target.value.length>=2] changed delay:250ms, search"
+         hx-target="#wo-results" hx-include="closest form" hx-push-url="true">
+  <input type="hidden" name="scope" value="{{ scope }}">
+  {% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}
+  <button type="submit" aria-label="search">
+    <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+  </button>
+</form>
+
+{# scope/tab chips 在 swap target 內(由 partial 渲染):即時過濾後連結的 q 才會跟著更新 #}
+<div id="wo-results">
+  {% include "partials/wo_list.html" %}
+</div>
+{% endblock %}

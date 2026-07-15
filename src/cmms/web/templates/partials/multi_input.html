@@ -1,0 +1,16 @@
+{# 多值人名輸入(0031 多負責人)。重複 <input name=field_name>,每格 data-suggest 自動完成;
+   「＋」複製空格、「×」移除(保留至少一格)。伺服端以 Form([]) 讀成 list[str]。
+   漸進增強:無 JS 時仍是可用的多個輸入框(只是不能動態增列)。 #}
+{% macro multi_input(field_name, values, placeholder, t, container_id="") %}
+<div class="multi-input" data-multi {% if container_id %}id="{{ container_id }}"{% endif %}>
+  {% set vals = values if values else [''] %}
+  {% for v in vals %}
+  <div class="multi-input__row">
+    <input class="form-input" name="{{ field_name }}" value="{{ v }}" data-suggest="person"
+           placeholder="{{ placeholder }}" autocomplete="off">
+    <button type="button" class="multi-input__rm" tabindex="-1" title="{{ t('multi.remove') }}">×</button>
+  </div>
+  {% endfor %}
+  <button type="button" class="multi-input__add" data-multi-add>＋ {{ t("multi.add") }}</button>
+</div>
+{% endmacro %}

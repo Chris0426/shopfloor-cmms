@@ -1,0 +1,147 @@
+{# SOP 片段:Jira 個人存取權杖(文字一字不改自 docs/sop/jira-pat-sop.html;視覺改 cmms 原生 .sop-*)。
+   不含 <html>/<head>/<body>/<style>;深淺色由 app.css CSS 變數處理。 #}
+<div class="sop">
+
+  <p class="sop-hero">讓 CMMS 用你的身分開 MRQ</p>
+  <p class="sop-lede">工單修一半發現要叫料,在 CMMS 按「轉發到 MRQ」就能把工單(含照片、工作日誌)送進 Jira 開請購單 —— 前提是 CMMS 得有一把鑰匙,才能以<strong>你本人</strong>的身分寫進 Jira。這把鑰匙叫個人存取權杖,你自己去 Jira 產,貼進 CMMS 一次,之後不用再管。約五分鐘。</p>
+
+  <div class="sop-steps">
+
+    <div class="sop-step">
+      <div class="sop-num">1</div>
+      <div class="sop-step-body">
+        <h2>到 Jira 的權杖頁面</h2>
+        <p>開啟 <a href="https://jira.example.com">jira.example.com</a>(用你平常的帳號登入),然後:</p>
+        <p class="sop-path">右上角<b>頭像</b> → <b>Profile</b> → 左側選單 <b>Personal Access Tokens</b> → 右上角 <b>Create token</b></p>
+        <p>這一頁會列出你現有的權杖(欄位是 Name / Date created / Expiry date / Last authenticated)。如果你以前沒建過,清單是空的 —— 正常。</p>
+      </div>
+    </div>
+
+    <div class="sop-step">
+      <div class="sop-num">2</div>
+      <div class="sop-step-body">
+        <h2>填表單,按 Create</h2>
+        <p>表單只有兩個地方要動:<strong>名字</strong>和<strong>有效期</strong>。權限那一段不用理它 —— Jira 不讓你選範圍,權杖的權限自動等於你帳號現有的權限。</p>
+        <figure class="sop-figure">
+          <div class="sop-mock">
+            <div class="sop-mock-bar sop-mock-bar--jira">JIRA · Create a personal access token</div>
+            <div class="sop-mock-body">
+              <div class="sop-banner-info">Personal access tokens are as important as passwords and should be equally protected.</div>
+
+              <p class="sop-field-label">Token Name <span class="sop-req">*</span></p>
+              <div class="sop-field filled">cmms</div>
+              <p class="sop-field-hint">Number of characters remaining: 36</p>
+
+              <p class="sop-mock-label">Permissions</p>
+              <p class="sop-field-hint">Permission level of personal access tokens is set to the level of access you currently have.</p>
+
+              <p class="sop-mock-label">Expiry date</p>
+              <div class="sop-check">
+                <span class="sop-box">✓</span>
+                <span>Automatic expiry</span>
+              </div>
+              <p class="sop-field-label" style="margin-top:10px;">Days until expiry</p>
+              <div class="sop-field filled" style="max-width:120px;">365</div>
+              <p class="sop-field-hint">The token will expire on 12 July 2027.</p>
+
+              <span class="sop-btn-jira">Create</span><span class="sop-btn-ghost">Cancel</span>
+            </div>
+          </div>
+          <figcaption class="sop-figcaption">名字取 <code class="sop-code">cmms</code>(之後在清單上一眼看得出這把是誰在用)。有效期預設是 90 天,建議改成 <strong>365</strong>。</figcaption>
+        </figure>
+
+        <div class="sop-note">
+          <strong>為什麼是 365 而不是永不到期?</strong>有效期一到,轉發就會失敗(CMMS 會誠實告訴你,不會靜靜壞掉),你回來重做一次這份 SOP 即可。設定「永不到期」雖然省事,但一把永久有效的鑰匙外流,風險是永久的。一年換一次是划算的折衷。
+        </div>
+      </div>
+    </div>
+
+    <div class="sop-step">
+      <div class="sop-num">3</div>
+      <div class="sop-step-body">
+        <h2>複製那串權杖 —— 只有這一次機會</h2>
+        <p>按下 Create,Jira 會把權杖顯示出來。<strong>這串字只會出現這一次</strong>,關掉頁面就再也看不到了(Jira 不保存明文,你也拿不回來)。</p>
+        <figure class="sop-figure">
+          <div class="sop-mock">
+            <div class="sop-mock-bar sop-mock-bar--jira">JIRA · Token created</div>
+            <div class="sop-mock-body">
+              <div class="sop-token-once">EXAMPLE-TOKEN-xxxxxxxxxxxxxxxxxxxxxxxx</div>
+              <p class="sop-field-hint" style="margin:0;">複製這串字。離開此頁後無法再次檢視。</p>
+            </div>
+          </div>
+          <figcaption class="sop-figcaption">示意畫面(權杖是假的)。真的那串請直接複製,先不要關頁面 —— 下一步馬上要用。</figcaption>
+        </figure>
+        <div class="sop-note sop-note--warn">
+          <strong>權杖等同你的密碼。</strong>不要貼到聊天室、email、便利貼。只貼進下一步的 CMMS 設定頁 —— 它會加密保存,而且明文永遠不會再顯示出來(連你自己也看不到)。萬一貼錯地方,回 Jira 的清單頁按 <strong>Revoke</strong> 撤銷,重做一次即可。
+        </div>
+      </div>
+    </div>
+
+    <div class="sop-step">
+      <div class="sop-num">4</div>
+      <div class="sop-step-body">
+        <h2>貼進 CMMS</h2>
+        <p>開啟 <a href="https://cmms.example.com/app">CMMS</a> → <strong>設定</strong>頁(電腦版在左側欄下方你的名字那區;手機版在右上角頭像)→ 捲到「<strong>Jira 個人存取權杖</strong>」。</p>
+        <figure class="sop-figure">
+          <div class="sop-mock">
+            <div class="sop-mock-bar sop-mock-bar--cmms">CMMS · 設定</div>
+            <div class="sop-mock-body">
+              <p class="sop-mock-label">Jira 個人存取權杖</p>
+              <p class="sop-field-hint">加密保存;僅用於你本人的轉發。</p>
+              <div class="sop-field">貼上你的 Jira PAT</div>
+              <div style="margin-top:10px;"><span class="sop-btn-cmms">儲存權杖</span></div>
+            </div>
+          </div>
+          <figcaption class="sop-figcaption">貼上、按「儲存權杖」。看到「權杖已加密保存。」就完成了。</figcaption>
+        </figure>
+        <p>存好之後,這一區會變成顯示建立日期和上次使用時間,並多出「更換權杖」與「刪除權杖」兩個選項。你隨時可以回來換掉或刪掉。</p>
+      </div>
+    </div>
+
+  </div>
+
+  <section class="sop-block">
+    <h2>完成之後怎麼用</h2>
+    <p>到任何一張工單的詳情頁,按「<strong>轉發到 MRQ</strong>」。CMMS 會:</p>
+    <ul>
+      <li>幫你把工單內容整理成一張 MRQ 的摘要與說明(<strong>送出前你可以自己改</strong>,不是它說了算);</li>
+      <li>把每一筆工作日誌 —— 包含你拍的照片 —— 逐則同步成 MRQ 的 comment;</li>
+      <li>之後你在工單上新增的紀錄,會自動繼續同步過去,不用再轉發一次。</li>
+    </ul>
+    <p>也可以一次勾選<strong>多張工單</strong>轉成同一張 MRQ(例如同一台機器的三張單一起叫料)。</p>
+
+    <div class="sop-note">
+      <strong>MRQ 上會顯示是「你」開的。</strong>CMMS 是用你的權杖以你的身分寫進 Jira —— 這正是要你自己產一把鑰匙、而不是全公司共用一把的原因:誰開的單,Jira 上就記誰。
+    </div>
+  </section>
+
+  <section class="sop-block">
+    <h2>遇到問題</h2>
+    <div class="sop-tbl-wrap">
+      <table class="sop-table">
+        <thead>
+          <tr><th>狀況</th><th>怎麼辦</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>轉發失敗,說權杖無效</td>
+            <td>權杖過期了(或被撤銷)。回 Jira 重做步驟 1–3 產一把新的,在 CMMS 用「更換權杖」貼上新的即可。</td>
+          </tr>
+          <tr>
+            <td>忘記複製權杖就關掉頁面</td>
+            <td>拿不回來了 —— 直接再建一把新的。舊的那把可以在清單頁按 Revoke 撤銷,免得留著佔位。</td>
+          </tr>
+          <tr>
+            <td>存權杖時說「伺服器加密主鑰未設定」</td>
+            <td>這是系統端的問題,不是你的錯。告訴 Jordan。</td>
+          </tr>
+          <tr>
+            <td>離職 / 換人接手</td>
+            <td>到 Jira 清單頁 Revoke,並在 CMMS 按「刪除權杖」。兩邊都清掉才乾淨。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>

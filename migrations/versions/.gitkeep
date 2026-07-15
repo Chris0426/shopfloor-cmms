@@ -1,0 +1,1 @@
+# 空 baseline。第一個 migration 隨 Asset 切片進來(`alembic revision --autogenerate -m "asset"`)。

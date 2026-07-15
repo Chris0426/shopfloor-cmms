@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.equipment") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.equipment") }}{% endblock %}
+{% block content %}
+{% if msg == 'adminonly' %}<div class="banner banner--info">{{ t("eq.msg.adminonly.create") }}</div>{% endif %}
+{% if is_admin %}
+<p style="padding:10px 16px 0;margin:0;">
+  <a href="/app/equipment/new" class="btn-submit" style="display:inline-block;width:auto;padding:7px 14px;text-decoration:none;">+ {{ t("eq.create.title") }}</a>
+</p>
+{% endif %}
+<form method="get" action="/app/equipment" class="inv-search">
+  <input name="q" value="{{ q or '' }}" placeholder="{{ t('eq.search') }}" autofocus
+         hx-get="/app/equipment" hx-trigger="input changed delay:250ms, search"
+         hx-target="#eq-results" hx-include="closest form" hx-push-url="true">
+  {# 只帶「使用者顯式選的類別」(chip 點選);未顯式時留空,讓伺服端在有搜尋字串時
+     預設「全部」(W2 殘留修:搜非 Production 的 EID 不再空手)。 #}
+  <input type="hidden" name="atype" value="{{ atype_explicit }}">
+  <button type="submit" aria-label="search">
+    <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+  </button>
+</form>
+
+<div id="eq-results">
+  {% include "partials/eq_list.html" %}
+</div>
+{% endblock %}

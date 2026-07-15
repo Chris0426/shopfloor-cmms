@@ -1,0 +1,7 @@
+{# 自動完成建議清單 fragment(/app/suggest;app.js data-suggest 元件渲染進 .ac-box) #}
+{% for o in options %}
+<button type="button" class="ac-item" data-value="{{ o.value }}"{% if o.extra %} data-extra="{{ o.extra }}"{% endif %}>
+  <span class="ac-val">{{ o.label }}</span>
+  {% if o.hint %}<span class="ac-hint">{{ o.hint }}</span>{% endif %}
+</button>
+{% endfor %}

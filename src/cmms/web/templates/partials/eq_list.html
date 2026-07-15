@@ -1,0 +1,38 @@
+{# 設備結果區塊(整頁 include + HTMX 即時過濾共用;原 equipment.html 清單體) #}
+{# 類別 chips(#4d):Production 預設優先 + 其他 asset_type 碼 + 全部;chips 在 swap 範圍內,
+   即時過濾後連結的 q 才會跟著更新(f14cf8d 教訓)。類別碼照原樣顯示,不 i18n 翻碼。 #}
+<div class="filters">
+  {% for tcode in eq_types %}
+  <a class="chip {{ 'is-active' if atype == tcode else '' }}"
+     href="/app/equipment?atype={{ tcode }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ tcode }}</a>
+  {% endfor %}
+  <a class="chip {{ 'is-active' if atype not in eq_types else '' }}"
+     href="/app/equipment?atype=all{% if q %}&q={{ q|urlencode }}{% endif %}">{{ t("wo.filter.all") }}</a>
+</div>
+{% if not q %}<p class="form-hint" style="margin:12px 16px 4px;">{{ t("eq.browse_hint") }}</p>{% endif %}
+{% if assets %}
+<div class="inv-list">
+  {% for a in assets %}
+  <a class="inv-card" href="/app/equipment/{{ a.asset_id }}">
+    <div class="inv-thumb">
+      {% if thumbs is defined and thumbs.get(a.asset_id) %}
+      <img src="{{ thumbs[a.asset_id] }}" alt="" loading="lazy">
+      {% else %}
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+      {% endif %}
+    </div>
+    <div class="inv-body">
+      <div class="inv-top">
+        <span class="mono inv-code">{{ a.asset_id }}</span>
+        {% if not a.available_for_service %}<span class="badge badge--muted">{{ t("eq.unavailable") }}</span>{% endif %}
+      </div>
+      <p class="inv-name">{{ a.description or "—" }}</p>
+      <p class="inv-meta">{{ a.asset_type or "—" }} · {{ a.department or "—" }} · {{ a.line or "—" }}</p>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">{{ t("eq.empty") }}</p>
+{% endif %}
+{% include "partials/pager.html" %}

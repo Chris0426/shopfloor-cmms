@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ t("export.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("export.title") }}{% endblock %}
+{% block content %}
+<div class="export">
+  <p class="export__intro">{{ t("export.intro") }}</p>
+
+  {# 五張資料集卡片:點選切換 active(整頁載入,active 高亮同步更新);每張一句話說明內容 #}
+  <div class="export-cards">
+    {% for slug, ds in datasets.items() %}
+    <a class="export-card {{ 'is-active' if slug == spec.slug else '' }}"
+       href="/app/export?ds={{ slug }}">
+      <span class="export-card__title">{{ t(ds.title_key) }}</span>
+      <span class="export-card__desc">{{ t(ds.desc_key) }}</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div id="export-panel">
+    {% include "partials/export_panel.html" %}
+  </div>
+</div>
+{% endblock %}

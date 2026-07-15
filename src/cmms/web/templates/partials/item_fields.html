@@ -1,0 +1,27 @@
+{# 品項主檔欄位組(單一來源:admin 直接編輯與 engineer 修改提案共用,避免兩份漂移) #}
+{% from "partials/combobox.html" import combobox %}
+<input name="name" value="{{ item.name or '' }}" placeholder="{{ t('inv.f.name') }}" style="flex:1 1 100%;">
+<input name="description" value="{{ item.description or '' }}" placeholder="{{ t('inv.f.desc') }}" style="flex:1 1 100%;">
+<input name="vendor_part_no" value="{{ item.vendor_part_no or '' }}" placeholder="{{ t('inv.vpart') }}" class="mono" style="flex:1 1 46%;">
+{# 儲位 = 受控詞彙 combobox(值必為 active storage_bin 或空);admin 可下拉末端 quick-add 新櫃位 #}
+{{ combobox('bin_location', item.bin_location, bins, t, 'bin', 'flex:1 1 46%;',
+            t('inv.location'), t('inv.bin.nomatch'), '',
+            ('/app/inventory/bins' if is_admin else ''), t('inv.bin.add')) }}
+<input name="reorder_point" value="{{ '%g'|format(item.reorder_point|float) if item.reorder_point is not none else '' }}" type="number" min="0" step="any" inputmode="decimal" placeholder="{{ t('inv.reorderpt') }}" style="flex:1 1 30%;">
+<input name="reorder_quantity" value="{{ '%g'|format(item.reorder_quantity|float) if item.reorder_quantity is not none else '' }}" type="number" min="0" step="any" inputmode="decimal" placeholder="{{ t('inv.reorderqty') }}" style="flex:1 1 30%;">
+<input name="lead_time_weeks" value="{{ item.lead_time_weeks if item.lead_time_weeks is not none else '' }}" type="number" min="0" step="1" inputmode="numeric" placeholder="{{ t('inv.f.lead') }}" style="flex:1 1 30%;">
+<input name="unit_cost" value="{{ '%g'|format(item.unit_cost|float) if item.unit_cost is not none else '' }}" type="number" min="0" step="any" inputmode="decimal" placeholder="{{ t('inv.f.cost') }}" style="flex:1 1 30%;">
+{# 供應商欄自動完成既有機構(#7b);選取後把 org_id 帶入下方唯讀代碼欄(#7g,data-fill) #}
+<input name="supplier" value="{{ item.supplier or '' }}" placeholder="{{ t('inv.supplier') }}"
+       data-suggest="supplier" data-fill="edit-org-id" autocomplete="off" style="flex:1 1 46%;">
+<input name="supplier_org_id" id="edit-org-id" value="{{ item.supplier_org_id or '' }}" readonly
+       placeholder="{{ t('inv.f.org') }}" class="mono" title="{{ t('inv.f.org.readonly') }}"
+       style="flex:1 1 46%;background:color-mix(in srgb, var(--ink-faint) 8%, transparent);color:var(--ink-soft);">
+<input name="weblink" value="{{ item.weblink or '' }}" placeholder="{{ t('inv.f.weblink') }}" style="flex:1 1 100%;">
+<input name="comment" value="{{ item.comment or '' }}" placeholder="{{ t('inv.f.comment') }}" style="flex:1 1 100%;">
+<label style="font-size:13px;display:flex;gap:6px;align-items:center;">
+  <input type="checkbox" name="is_stocked" value="true" {% if item.is_stocked %}checked{% endif %}> {{ t("inv.f.stocked") }}
+</label>
+<label style="font-size:13px;display:flex;gap:6px;align-items:center;">
+  <input type="checkbox" name="is_obsolete" value="true" {% if item.is_obsolete %}checked{% endif %}> {{ t("inv.obsolete") }}
+</label>

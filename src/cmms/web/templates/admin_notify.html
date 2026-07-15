@@ -1,0 +1,172 @@
+{% extends "admin_base.html" %}
+{% from "partials/multi_input.html" import multi_input %}
+{% block content %}
+<div class="adm-head"><h2>{{ t("admin.notify.title") }}</h2></div>
+{% if err %}<div class="adm-banner">{{ err }}</div>{% endif %}
+<p class="form-hint" style="padding:0 14px 8px;">{{ t("admin.notify.intro") }}</p>
+
+{# ---- 通道配置狀態 ---- #}
+<div class="adm-stats">
+  <div class="adm-stat">
+    <span class="adm-stat__n">{{ "✓" if smtp_ok else "—" }}</span>
+    <span class="adm-stat__l">{{ t("admin.notify.smtp") }}</span>
+  </div>
+  <div class="adm-stat">
+    <span class="adm-stat__n">{{ "✓" if telegram_ok else "—" }}</span>
+    <span class="adm-stat__l">{{ t("admin.notify.telegram") }}</span>
+  </div>
+  <div class="adm-stat">
+    <span class="adm-stat__n">{{ failed_count }}</span>
+    <span class="adm-stat__l">{{ t("admin.notify.failed") }}</span>
+  </div>
+</div>
+{% if not smtp_ok or not telegram_ok %}
+<p class="form-hint" style="padding:0 14px 8px;color:var(--st-red);">{{ t("admin.notify.unconfigured") }}</p>
+{% endif %}
+
+{% set contacts = recipients | selectattr("assignee_name") | list %}
+{% set broadcasts = recipients | rejectattr("assignee_name") | list %}
+
+{# ==== ① 人員通訊錄(機台負責人)==== #}
+{% macro recipient_row(r) %}
+<tr>
+  <td colspan="7" style="padding:0;">
+    <form method="post" action="/admin/notify/{{ r.id }}/update" class="adm-actions" style="padding:9px 10px;">
+      <input name="name" value="{{ r.name }}" required style="min-width:110px;" placeholder="{{ t('admin.notify.name') }}">
+      <input name="email" value="{{ r.email or '' }}" style="min-width:150px;" placeholder="{{ t('admin.notify.email') }}" autocomplete="off">
+      <input name="telegram_chat_id" value="{{ r.telegram_chat_id or '' }}" class="mono" style="min-width:100px;" placeholder="{{ t('admin.notify.chatid') }}" autocomplete="off">
+      <input name="assignee_name" value="{{ r.assignee_name or '' }}" data-suggest="person" style="min-width:110px;" placeholder="{{ t('admin.notify.assignee') }}" autocomplete="off">
+      <label style="font-size:12px;display:inline-flex;gap:3px;align-items:center;">
+        <input type="checkbox" name="notify_on_open" value="1" {{ 'checked' if r.notify_on_open else '' }}>{{ t("admin.notify.onopen") }}
+      </label>
+      <label style="font-size:12px;display:inline-flex;gap:3px;align-items:center;">
+        <input type="checkbox" name="notify_on_close" value="1" {{ 'checked' if r.notify_on_close else '' }}>{{ t("admin.notify.onclose") }}
+      </label>
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:180px;">
+        <span class="form-hint" style="margin:0;">{{ t("admin.notify.watch") }}{% if r.watches %}: {{ r.watches | join("、") }}{% endif %}</span>
+        {{ multi_input("watch_assignees", r.watches, t("admin.notify.watch_ph"), t) }}
+      </div>
+      <button type="submit">{{ t("admin.action.save") }}</button>
+    </form>
+  </td>
+  <td>
+    <div class="adm-actions">
+      <span>{{ t("admin.status.active") if r.is_active else t("admin.status.inactive") }}</span>
+      <form method="post" action="/admin/notify/{{ r.id }}/toggle">
+        <input type="hidden" name="is_active" value="{{ '0' if r.is_active else '1' }}">
+        <button type="submit">{{ t("admin.action.deactivate") if r.is_active else t("admin.action.activate") }}</button>
+      </form>
+    </div>
+  </td>
+</tr>
+{% endmacro %}
+
+<div class="adm-head"><h2 style="font-size:17px;">{{ t("admin.notify.section.contacts") }}</h2></div>
+<p class="form-hint" style="padding:0 14px 8px;">{{ t("admin.notify.contacts_hint") }}</p>
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.notify.name") }}</th><th>{{ t("admin.notify.email") }}</th>
+      <th>{{ t("admin.notify.chatid") }}</th><th>{{ t("admin.notify.assignee") }}</th>
+      <th>{{ t("admin.notify.onopen") }}</th><th>{{ t("admin.notify.onclose") }}</th>
+      <th>{{ t("admin.notify.state") }}</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in contacts %}{{ recipient_row(r) }}{% endfor %}
+    {% if not contacts %}
+    <tr><td colspan="8" class="form-hint" style="padding:12px;">{{ t("admin.notify.contacts_empty") }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+{# 新增通訊錄(機台負責人;assignee_name 必填,免勾廣播) #}
+<div class="adm-form">
+  <h2 style="font-family:'Newsreader',serif;font-size:15px;margin:16px 0 0;">{{ t("admin.notify.add_contact") }}</h2>
+  <p class="form-hint">{{ t("admin.notify.add_contact_hint") }}</p>
+  <form method="post" action="/admin/notify">
+    <label>{{ t("admin.notify.assignee") }}</label>
+    <input name="assignee_name" required data-suggest="person" autocomplete="off" placeholder="{{ t('admin.notify.assignee_ph') }}">
+    <label>{{ t("admin.notify.name") }}</label>
+    <input name="name" required autocomplete="off">
+    <label>{{ t("admin.notify.email") }}</label>
+    <input name="email" type="email" autocomplete="off">
+    <label>{{ t("admin.notify.chatid") }}</label>
+    <input name="telegram_chat_id" class="mono" autocomplete="off">
+    <label>{{ t("admin.notify.watch") }}</label>
+    <p class="form-hint" style="margin:0 0 4px;">{{ t("admin.notify.watch_hint") }}</p>
+    {{ multi_input("watch_assignees", [], t("admin.notify.watch_ph"), t) }}
+    <button type="submit" class="btn-submit" style="margin-top:10px;">{{ t("admin.notify.add_contact") }}</button>
+  </form>
+</div>
+
+{# ==== ② 廣播名單(工程團隊 / 線管理者群組;勾開/結案廣播,不綁機台) ==== #}
+<div class="adm-head"><h2 style="font-size:17px;margin-top:18px;">{{ t("admin.notify.section.broadcast") }}</h2></div>
+<p class="form-hint" style="padding:0 14px 8px;">{{ t("admin.notify.broadcast_hint") }}</p>
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.notify.name") }}</th><th>{{ t("admin.notify.email") }}</th>
+      <th>{{ t("admin.notify.chatid") }}</th><th>{{ t("admin.notify.assignee") }}</th>
+      <th>{{ t("admin.notify.onopen") }}</th><th>{{ t("admin.notify.onclose") }}</th>
+      <th>{{ t("admin.notify.state") }}</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in broadcasts %}{{ recipient_row(r) }}{% endfor %}
+    {% if not broadcasts %}
+    <tr><td colspan="8" class="form-hint" style="padding:12px;">{{ t("admin.notify.broadcast_empty") }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+{# 新增廣播收件人 #}
+<div class="adm-form">
+  <h2 style="font-family:'Newsreader',serif;font-size:15px;margin:16px 0 0;">{{ t("admin.notify.add_broadcast") }}</h2>
+  <p class="form-hint">{{ t("admin.notify.add_broadcast_hint") }}</p>
+  <form method="post" action="/admin/notify">
+    <label>{{ t("admin.notify.name") }}</label>
+    <input name="name" required autocomplete="off">
+    <label>{{ t("admin.notify.email") }}</label>
+    <input name="email" type="email" autocomplete="off">
+    <label>{{ t("admin.notify.chatid") }}</label>
+    <input name="telegram_chat_id" class="mono" autocomplete="off">
+    <label style="display:inline-flex;gap:6px;align-items:center;margin-top:12px;">
+      <input type="checkbox" name="notify_on_open" value="1"> {{ t("admin.notify.onopen_full") }}
+    </label>
+    <label style="display:inline-flex;gap:6px;align-items:center;">
+      <input type="checkbox" name="notify_on_close" value="1"> {{ t("admin.notify.onclose_full") }}
+    </label>
+    <label style="margin-top:12px;">{{ t("admin.notify.watch") }}</label>
+    <p class="form-hint" style="margin:0 0 4px;">{{ t("admin.notify.watch_hint") }}</p>
+    {{ multi_input("watch_assignees", [], t("admin.notify.watch_ph"), t) }}
+    <button type="submit" class="btn-submit" style="margin-top:10px;">{{ t("admin.notify.add_broadcast") }}</button>
+  </form>
+</div>
+
+{# ---- 近期 outbox(唯讀) ---- #}
+<div class="adm-head"><h2 style="font-size:17px;">{{ t("admin.notify.outbox") }}</h2></div>
+<table class="adm-table">
+  <thead><tr>
+    <th>WO</th><th>{{ t("admin.notify.event") }}</th><th>{{ t("admin.notify.channel") }}</th>
+    <th>{{ t("admin.notify.recipient") }}</th><th>{{ t("admin.notify.state") }}</th>
+    <th>{{ t("admin.notify.attempts") }}</th><th>{{ t("admin.notify.error") }}</th>
+  </tr></thead>
+  <tbody>
+    {% for o in recent %}
+    <tr>
+      <td class="mono">{{ o.work_order_no }}</td>
+      <td>{{ o.event }}</td>
+      <td>{{ o.channel }}</td>
+      <td>{{ recipient_names.get(o.recipient_id, o.recipient_id) }}</td>
+      <td>{{ o.status }}</td>
+      <td class="mono">{{ o.attempts }}</td>
+      <td>{{ (o.last_error or "")[:60] or "—" }}</td>
+    </tr>
+    {% endfor %}
+    {% if not recent %}
+    <tr><td colspan="7" class="form-hint" style="padding:12px;">{{ t("admin.notify.outbox_empty") }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+{% endblock %}

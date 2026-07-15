@@ -1,0 +1,49 @@
+# Fly app — application machine (FastAPI + MCP server + background workers).
+#
+# The self-managed PostgreSQL runs as a *separate* machine; its deployment config lives in
+# infra/postgres/ (ADR-013, Tier B). The app reaches it over Fly's private network (*.internal);
+# the connection string is injected as the secret CMMS_DATABASE_URL.
+#
+# Discipline (ADR-009 / ADR-013): every change goes through PR + CI + IaC. Production config is
+# never edited in the web dashboard. Scale, env and secrets are set from here (secrets excepted,
+# which are set once via the CLI and never committed).
+
+app = "shopfloor-cmms"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Migrations run before the app starts, on every deploy.
+[deploy]
+  release_command = "alembic upgrade head"
+
+[env]
+  CMMS_APP_ENV = "production"
+  # CMMS_DATABASE_URL is a secret (points at the PG machine over *.internal) — not set here.
+  # The agent gateway address is not a secret; it is a private flycast address (ADR-020).
+  # Its paired shared secret is HERMES_GATEWAY_SECRET.
+  CMMS_HERMES_GATEWAY_URL = "http://shopfloor-cmms-hermes.flycast:8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

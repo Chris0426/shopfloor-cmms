@@ -1,0 +1,14 @@
+{# 分頁列(上一頁 / 下一頁)。只在有多頁時顯示(page>1 或 has_next)。
+   `pager_base` 已含當前查詢參數(q/tab/scope/low)並以 '?' 或 '&' 收尾 → 接 page=N,
+   故過濾與分頁可疊。輸入新過濾時搜尋表單不含 page 欄 → 請求自然回第一頁。 #}
+{% if page > 1 or has_next %}
+<nav class="pager">
+  {% if page > 1 %}
+  <a class="pager__btn" href="{{ pager_base }}page={{ page - 1 }}">{{ t("pager.prev") }}</a>
+  {% else %}<span class="pager__btn is-disabled">{{ t("pager.prev") }}</span>{% endif %}
+  <span class="pager__page">{{ t("pager.page") }} {{ page }}</span>
+  {% if has_next %}
+  <a class="pager__btn" href="{{ pager_base }}page={{ page + 1 }}">{{ t("pager.next") }}</a>
+  {% else %}<span class="pager__btn is-disabled">{{ t("pager.next") }}</span>{% endif %}
+</nav>
+{% endif %}

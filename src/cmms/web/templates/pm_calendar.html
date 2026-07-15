@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.pm") }} · {{ title }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.pm") }}{% endblock %}
+{% block content %}
+<style>
+  .cal-nav { display:flex; justify-content:space-between; align-items:center; padding:6px 16px; }
+  .cal-nav a { text-decoration:none; color:var(--clay); font-weight:600; font-size:14px; }
+  .cal-nav .cal-title { font-weight:600; font-family:"Newsreader",serif; font-size:16px; }
+  .cal-head, .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; padding:0 12px; }
+  .cal-head { margin-bottom:4px; }
+  .cal-head span { text-align:center; font-size:11px; color:var(--ink-faint); font-weight:600; }
+  .cal-grid { padding-bottom:20px; }
+  .cal-cell { min-height:60px; border:1px solid var(--line); border-radius:8px; padding:3px 4px; overflow:hidden; }
+  .cal-cell--out { opacity:.35; }
+  .cal-cell--today { border-color:var(--clay); border-width:2px; }
+  .cal-daynum { font-size:11px; color:var(--ink-soft); display:block; }
+  .cal-mark { display:block; font-size:10px; margin-top:2px; border-radius:4px; padding:1px 4px; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cal-mark--due { background:color-mix(in srgb, var(--st-red) 15%, transparent); color:var(--st-red); }
+  .cal-mark--gen { background:color-mix(in srgb, var(--st-prog) 15%, transparent); color:var(--st-prog); }
+  /* 週/日視圖:一天一列,格子大、內容全 */
+  .cal-rows { display:flex; flex-direction:column; gap:8px; padding:0 12px 20px; }
+  .cal-row { border:1px solid var(--line); border-radius:10px; padding:8px 10px; }
+  .cal-row--today { border-color:var(--clay); border-width:2px; }
+  .cal-row__date { font-size:12px; font-weight:600; color:var(--ink-soft); margin-bottom:4px; }
+  .cal-item { display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:8px; text-decoration:none; font-size:13px; color:var(--ink); flex-wrap:wrap; }
+  .cal-item:hover { background:var(--line); }
+  .cal-item .mono { font-size:11px; color:var(--ink-faint); }
+</style>
+
+<div class="filters">
+  <a class="chip" href="/app/pm?scope={{ scope }}">{{ t("pm.view.list") }}</a>
+  {% for vkey, vlabel in [('month','pm.view.calendar'), ('week','pm.view.week'), ('day','pm.view.day')] %}
+  <a class="chip {{ 'is-active' if view == vkey else '' }}"
+     href="/app/pm/calendar?view={{ vkey }}&d={{ anchor.isoformat() }}&scope={{ scope }}">{{ t(vlabel) }}</a>
+  {% endfor %}
+</div>
+
+{# Mine/All 切換(#5b:月/週/日三視圖都保留;穿透當前 view + 錨定日,切視圖不掉 scope) #}
+<div class="filters">
+  {% for key, label in [('mine','scope.mine'), ('all','scope.all')] %}
+  <a class="chip {{ 'is-active' if scope == key else '' }}"
+     href="/app/pm/calendar?view={{ view }}&d={{ anchor.isoformat() }}&scope={{ key }}">{{ t(label) }}</a>
+  {% endfor %}
+</div>
+
+<div class="cal-nav">
+  <a href="/app/pm/calendar?view={{ view }}&d={{ prev_d.isoformat() }}&scope={{ scope }}">{{ t("pm.cal.prev") }}</a>
+  <span class="cal-title">{{ title }}</span>
+  <a href="/app/pm/calendar?view={{ view }}&d={{ next_d.isoformat() }}&scope={{ scope }}">{{ t("pm.cal.next") }}</a>
+</div>
+
+{% if scope == 'mine' and not has_assignee %}
+<p class="empty">{{ t("scope.empty") }} <a href="/app/pm/calendar?view={{ view }}&scope=all">{{ t("scope.all") }} →</a></p>
+{% endif %}
+
+{% if view == 'month' %}
+<div class="cal-head">
+  {% for wd in t("pm.cal.weekdays").split(" ") %}<span>{{ wd }}</span>{% endfor %}
+</div>
+<div class="cal-grid">
+  {% for week in month_weeks %}
+    {% for day in week %}
+    <div class="cal-cell {{ 'cal-cell--out' if day.month != anchor.month else '' }} {{ 'cal-cell--today' if day == today else '' }}">
+      <a class="cal-daynum" style="text-decoration:none;" href="/app/pm/calendar?view=day&d={{ day.isoformat() }}&scope={{ scope }}">{{ day.day }}</a>
+      {% for pm in due_by_date.get(day, []) %}
+      <a class="cal-mark cal-mark--due" href="/app/pm?focus={{ pm.pm_id }}&scope={{ scope }}"
+         title="{{ pm.pm_id }} · {{ task_names.get(pm.task_id, pm.task_id) }}">{{ t("pm.cal.due") }} {{ pm.asset_id }}</a>
+      {% endfor %}
+      {% for wo in gen_by_date.get(day, []) %}
+      <a class="cal-mark cal-mark--gen" href="/app/work-orders/{{ wo.work_order_no }}" title="WO-{{ wo.work_order_no }}">{{ t("pm.cal.gen") }} {{ wo.work_order_no }}</a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  {% endfor %}
+</div>
+
+{% else %}
+{# 週/日視圖:一天一列,顯示完整內容(任務名 + EID + 負責人);日視圖含執行按鈕 #}
+<div class="cal-rows">
+  {% for day in (week_days if view == 'week' else [anchor]) %}
+  <div class="cal-row {{ 'cal-row--today' if day == today else '' }}">
+    <p class="cal-row__date">{{ day.isoformat() }}{% if day == today %} · {{ t("pm.cal.today") }}{% endif %}</p>
+    {% set dues = due_by_date.get(day, []) %}
+    {% set gens = gen_by_date.get(day, []) %}
+    {% if not dues and not gens %}
+    <p class="form-hint" style="margin:0;">—</p>
+    {% endif %}
+    {% for pm in dues %}
+    <div style="display:flex;align-items:center;gap:6px;">
+      <a class="cal-item" style="flex:1;min-width:0;" href="/app/pm?focus={{ pm.pm_id }}&scope={{ scope }}">
+        <span class="badge badge--red">{{ t("pm.cal.due") }}</span>
+        <span>{{ task_names.get(pm.task_id, pm.task_id) }}</span>
+        <span class="mono">{{ pm.asset_id }} · {{ pm.pm_id }}{% if pm.effective_assignee %} · {{ pm.effective_assignee }}{% endif %}</span>
+      </a>
+      {# #5e:日視圖「補開工單」鈕只在已到期(含週末提前)且本期未生成時顯示 #}
+      {% if view == 'day' and pm_due_by(pm.next_due_date, today) and pm.pm_id not in generated %}
+      {# #5b:改連結至確認頁(可改 owner、可取消) #}
+      <a class="chip pm-exec" href="/app/pm/{{ pm.pm_id }}/backfill" style="flex:0 0 auto;">{{ t("pm.backfill") }}</a>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% for wo in gens %}
+    <a class="cal-item" href="/app/work-orders/{{ wo.work_order_no }}">
+      <span class="badge badge--prog">{{ t("pm.cal.gen") }}</span>
+      <span>{{ wo.brief_description or "—" }}</span>
+      <span class="mono">WO-{{ wo.work_order_no }} · {{ wo.asset_id }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

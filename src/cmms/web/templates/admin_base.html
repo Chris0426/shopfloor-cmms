@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ t("nav.admin") }} · {{ t("app.name") }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>
+  <script src="/static/app.js" defer></script>
+  <style>
+    .adm-wrap { max-width: 980px; margin: 0 auto; padding: 4px 4px 48px; }
+    .adm-top { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--line); flex-wrap:wrap; gap:8px; }
+    .adm-top h1 { font-family:"Newsreader",serif; font-size:20px; margin:0; }
+    .adm-top nav { display:flex; gap:16px; align-items:center; }
+    .adm-top nav a { text-decoration:none; color:var(--ink-soft); font-size:14px; }
+    .adm-top nav a.is-active { color:var(--clay); font-weight:600; }
+    .adm-banner { background:color-mix(in srgb, var(--st-red) 12%, transparent); color:var(--st-red); padding:8px 12px; border-radius:8px; margin:12px 14px 0; font-size:13px; }
+    .adm-head { display:flex; align-items:center; justify-content:space-between; padding:16px 14px 8px; }
+    .adm-head h2 { font-family:"Newsreader",serif; font-size:22px; margin:0; }
+    .adm-table { width:100%; border-collapse:collapse; font-size:14px; }
+    .adm-table th { text-align:left; font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.03em; padding:8px 10px; border-bottom:1px solid var(--line); }
+    .adm-table td { padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+    .adm-actions { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+    .adm-actions form { display:inline-flex; gap:4px; align-items:center; margin:0; }
+    .adm-actions button { font-size:12px; padding:3px 9px; border:1px solid var(--line); border-radius:6px; background:transparent; cursor:pointer; color:var(--ink,#333); }
+    .adm-actions button:hover { border-color:var(--clay); color:var(--clay); }
+    .adm-actions input, .adm-actions select { font-size:12px; padding:2px 5px; border:1px solid var(--line); border-radius:6px; }
+    .adm-form { max-width:440px; padding:8px 14px; }
+    .adm-form label { display:block; font-size:12px; color:var(--ink-soft); margin:12px 0 3px; }
+    .adm-form input, .adm-form select { width:100%; padding:9px; border:1px solid var(--line); border-radius:9px; font-size:14px; box-sizing:border-box; }
+    .adm-steps { padding:8px 30px 24px; }
+    .adm-steps li { margin:9px 0; line-height:1.5; }
+    .adm-steps .badge { margin-left:6px; }
+    .adm-audit-filter { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:4px 14px 12px; flex-wrap:wrap; }
+    .adm-audit-tabs { display:flex; gap:12px; flex-wrap:wrap; }
+    .adm-audit-tabs a { text-decoration:none; color:var(--ink-soft); font-size:13px; }
+    .adm-audit-tabs a.is-active { color:var(--clay); font-weight:600; }
+    .adm-audit-controls { display:inline-flex; gap:6px; align-items:center; }
+    .adm-audit-controls input { font-size:12px; padding:4px 7px; border:1px solid var(--line); border-radius:6px; }
+    .adm-audit-controls button { font-size:12px; padding:4px 10px; border:1px solid var(--line); border-radius:6px; background:transparent; cursor:pointer; color:var(--ink,#333); }
+    .adm-audit-controls button:hover { border-color:var(--clay); color:var(--clay); }
+    .adm-audit-filter .badge { margin-right:4px; }
+    .adm-table td .badge, .adm-table td a.mono { margin-right:5px; }
+    .adm-stats { display:flex; gap:12px; flex-wrap:wrap; padding:4px 14px 12px; }
+    .adm-stat { border:1px solid var(--line); border-radius:10px; padding:10px 16px; min-width:96px; }
+    .adm-stat__n { display:block; font-family:"Newsreader",serif; font-size:24px; }
+    .adm-stat__l { display:block; font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.03em; }
+  </style>
+</head>
+<body>
+  <div class="adm-top">
+    <h1>{{ t("nav.admin") }}</h1>
+    <nav>
+      <a href="/admin/accounts" class="{{ 'is-active' if active == 'accounts' else '' }}">{{ t("admin.accounts.title") }}</a>
+      <a href="/admin/pm" class="{{ 'is-active' if active == 'pm' else '' }}">{{ t("admin.pm.title") }}</a>
+      <a href="/admin/proposals" class="{{ 'is-active' if active == 'proposals' else '' }}">{{ t("admin.prop.title") }}</a>
+      <a href="/admin/audit" class="{{ 'is-active' if active == 'audit' else '' }}">{{ t("admin.audit.title") }}</a>
+      <a href="/admin/attachments" class="{{ 'is-active' if active == 'attachments' else '' }}">{{ t("admin.att.title") }}</a>
+      <a href="/admin/credentials" class="{{ 'is-active' if active == 'credentials' else '' }}">{{ t("admin.cred.title") }}</a>
+      <a href="/admin/vocab" class="{{ 'is-active' if active == 'vocab' else '' }}">{{ t("admin.vocab.title") }}</a>
+      <a href="/admin/notify" class="{{ 'is-active' if active == 'notify' else '' }}">{{ t("admin.notify.title") }}</a>
+      <a href="/admin/relationships" class="{{ 'is-active' if active == 'relationships' else '' }}">{{ t("admin.rel.title") }}</a>
+      <a href="/admin/owners" class="{{ 'is-active' if active == 'owners' else '' }}">{{ t("admin.owners.title") }}</a>
+      <a href="/app">{{ t("admin.back") }}</a>
+      <a href="/app/logout">{{ t("nav.logout") }}</a>
+      <span class="avatar" title="{{ user_name or '' }}">{{ user_initial or "·" }}</span>
+    </nav>
+  </div>
+  <div class="adm-wrap">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

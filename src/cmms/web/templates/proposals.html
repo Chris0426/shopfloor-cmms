@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ t("myprop.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("myprop.title") }}{% endblock %}
+{% block content %}
+{# 我的提案(唯讀):提案人追蹤自己送出的提案審核進度。狀態值以 model 為準;
+   逾期仍 PENDING 者以 expires_at 對現在時間顯示為「已逾期」(顯示層,不改 DB)。 #}
+{% set prop_css = {'PENDING':'prog','CONFIRMED':'done','REJECTED':'red','EXPIRED':'muted'} %}
+<p class="form-hint">{{ t("myprop.hint") }}</p>
+{% if proposals %}
+<ol class="timeline">
+  {% for p in proposals %}
+  {# 顯示狀態:PENDING 但已過 expires_at → 顯示 EXPIRED(唯讀頁不 sweep DB) #}
+  {% set eff = 'EXPIRED' if (p.status == 'PENDING' and p.expires_at <= now) else p.status %}
+  {% set css = prop_css.get(eff, 'muted') %}
+  <li class="tl-entry">
+    <span class="tl-dot tl-dot--{{ css }}"></span>
+    <div class="tl-head">
+      <span class="badge badge--{{ css }}">{{ t("myprop.status." ~ eff) }}</span>
+      <span class="badge badge--{{ 'red' if p.operation == 'void_work_order' else 'prog' }}">{{ t("admin.prop.op." ~ p.operation) }}</span>
+      <span class="tl-time">{{ p.created_at.strftime("%m/%d %H:%M") }}</span>
+    </div>
+    <p class="tl-body">
+      {# 提案目標連結(工單 / 品項),與 admin 審核頁一致 #}
+      {% if p.params.get('work_order_no') %}
+      <a class="mono" href="/app/work-orders/{{ p.params['work_order_no'] }}">WO-{{ p.params['work_order_no'] }}</a>
+      {% endif %}
+      {% if p.params.get('item_code') %}
+      <a class="mono" href="/app/inventory/{{ p.params['item_code'] }}">{{ p.params['item_code'] }}</a>
+      {% endif %}
+      {% if p.params.get('reason') %}<span style="margin-left:6px;">{{ p.params['reason'] }}</span>{% endif %}
+    </p>
+    {# update_item 提案:人讀得懂的欄位差異(dry-run diff 只列會變的欄位)—— 與 admin 頁同形 #}
+    {% if p.dry_run_diff and p.dry_run_diff.get('changes') is mapping %}
+    <ul style="margin:0 0 4px;padding-left:16px;font-size:12px;color:var(--ink-soft);">
+      {% for field, ch in p.dry_run_diff['changes'].items() %}
+      <li><span class="mono">{{ field }}</span>: {{ ch['from'] }} → <strong>{{ ch['to'] }}</strong></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <p class="form-hint" style="margin:2px 0 0;">
+      {% if eff == 'PENDING' %}
+      {{ t("myprop.expires") }} {{ p.expires_at.strftime("%m/%d %H:%M") }}
+      {% elif p.status in ('CONFIRMED', 'REJECTED') and p.confirmed_by %}
+      {# confirmed_by = 裁決者(confirm=執行的 admin;reject=駁回者);model 無獨立駁回理由欄,不捏造 #}
+      {{ t("myprop.reviewed_by") }} <span class="mono">{{ p.confirmed_by.split(":")[-1] }}</span>
+      {% if p.resolved_at %} · {{ p.resolved_at.strftime("%m/%d %H:%M") }}{% endif %}
+      {% endif %}
+    </p>
+  </li>
+  {% endfor %}
+</ol>
+{% include "partials/pager.html" %}
+{% else %}
+<p class="empty">{{ t("myprop.empty") }}</p>
+{% endif %}
+{% endblock %}
