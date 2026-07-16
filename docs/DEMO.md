@@ -51,8 +51,10 @@ Log in as **`jordan.lee`**. The queue opens on **Mine / active** — the still-o
 assigned to him (roughly half of the live queue; switch to **All** to see the rest). Two
 seeded ones are worth opening:
 
-- **WO 20301** — in progress, with `2 × EC000002` issued against it. The part issue moved
-  stock: the item's on-hand went down, and there is a `stock_transaction` behind it.
+- **WO 20301** — the repair is finished and marked **completed**, with `2 × EC000002`
+  issued against it. The part issue moved stock: the item's on-hand went down, and there
+  is a `stock_transaction` behind it. It is waiting to be formally closed — which is
+  exactly the close the agent proposes in step 3.
 - **WO 20302** — on hold, reason **waiting for parts**. The hold reason is not cosmetic:
   it decides whether the clock keeps running. Waiting for a part means the machine is
   down; waiting for a *production window* means the machine is still making product, and

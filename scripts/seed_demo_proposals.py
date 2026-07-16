@@ -27,6 +27,11 @@ from cmms.domain.work_order.service import WorkOrderService
 AGENT = Actor.agent("assistant")
 ENGINEER = Actor.human("jordan.lee")
 
+# The default agent-proposal TTL is 1 hour — fine in production, wrong for a demo
+# someone explores at their own pace. Give both seeded proposals a long life so the
+# governance centrepiece is still waiting in /admin/proposals hours or days later.
+DEMO_TTL_SECONDS = 30 * 24 * 3600  # 30 days
+
 
 async def main() -> None:
     async with get_sessionmaker()() as session:
@@ -45,6 +50,7 @@ async def main() -> None:
             },
             proposed_by=AGENT,
             idempotency_key="demo:close:20301",
+            ttl_seconds=DEMO_TTL_SECONDS,
         )
         print(f"proposal {p1.pending_token[:12]}... close_work_order 20301 (by {p1.proposed_by})")
 
@@ -54,6 +60,7 @@ async def main() -> None:
             params={"work_order_no": 20303, "reason": "Duplicate of an existing oven report."},
             proposed_by=ENGINEER,
             idempotency_key="demo:void:20303",
+            ttl_seconds=DEMO_TTL_SECONDS,
         )
         print(f"proposal {p2.pending_token[:12]}... void_work_order 20303 (by {p2.proposed_by})")
 

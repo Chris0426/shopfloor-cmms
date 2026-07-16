@@ -71,12 +71,16 @@ if "$CMMS" user-create "$ADMIN_USER" --username "$ADMIN_USER" --name "Demo Admin
   "$PY" scripts/assign_demo_owners.py
 
   echo "==> 5/5 live scenario (governed writes -> status history + downtime)"
-  # (a) breakdown that is being worked on right now, with a part issued against it
+  # (a) breakdown whose repair is finished and marked COMPLETED, with a part issued
+  #     against it. The agent proposes to CLOSE it (COMPLETED -> CLOSED locks the
+  #     downtime); an admin confirms in /admin/proposals. Leaving it COMPLETED (not
+  #     IN_PROGRESS) is what makes that close proposal a legal transition.
   WO_A=$("$CMMS" wo-open EID-10001 REACTIVE --user "$ENG_USER" \
       --brief "Aligner-01 will not home on X axis after the morning restart" | awk '{print $3}')
   "$CMMS" wo-transition "$WO_A" start --user "$ENG_USER"
   "$CMMS" wo-issue-part "$WO_A" EC000002 2 --user "$ENG_USER"
-  echo "    WO $WO_A: IN_PROGRESS, 2 x EC000002 issued"
+  "$CMMS" wo-transition "$WO_A" complete --user "$ENG_USER"
+  echo "    WO $WO_A: COMPLETED, 2 x EC000002 issued"
 
   # (b) breakdown parked while a spare is on order (hold reason drives the downtime rules)
   WO_B=$("$CMMS" wo-open EID-10004 REACTIVE --user "$ENG_USER" \
