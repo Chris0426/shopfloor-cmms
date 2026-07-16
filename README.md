@@ -6,6 +6,11 @@ commercial CMMS, with an LLM agent wired in under a hard governance boundary.
 **The agent can read anything in this system. It can write nothing.**
 Every action an agent takes lands as a *proposal* that a human confirms.
 
+![The governance loop: an agent proposes a work-order close, a human admin confirms it, and the audit trail records who did what](docs/media/governance-loop.gif)
+
+*Above: the agent has proposed closing a work order. It waits in `/admin/proposals` until a human
+confirms — and the audit trail records the confirmation against the admin, not the agent.*
+
 ---
 
 ## Why this exists
