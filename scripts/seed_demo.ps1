@@ -61,6 +61,7 @@ if ($adminCreated -or $env:SEED_FORCE -eq "1") {
         --brief "Aligner-01 will not home on X axis after the morning restart").Split(" ")[2]
     Cmms wo-transition $woA start --user $EngUser
     Cmms wo-issue-part $woA EC900002 2 --user $EngUser
+    Cmms wo-transition $woA complete --user $EngUser
 
     $woB = (Cmms wo-open EID-97004 REACTIVE --user $EngUser `
         --brief "Dispenser-01 tip clogged, no dispense on head 2").Split(" ")[2]
