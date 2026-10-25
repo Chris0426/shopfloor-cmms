@@ -22,7 +22,11 @@ x-app-env: &app-env
   # Envelope-encryption master key for the per-user credential vault (Fernet).
   # Throwaway demo key; the vault stays fail-closed without one.
   CMMS_CREDENTIAL_MASTER_KEY: bWRHroKgiH24S951s3KsYL5vWgoRzcGxOksnwCopvls=
-  CMMS_PUBLIC_BASE_URL: http://localhost:8000
+  # 示範站模式:登入頁列示範帳號 + 橫幅。本 compose 本來就是示範用途;生產部署不走這個檔。
+  CMMS_DEMO_MODE: "1"
+  # A public deployment overrides this via the shell env, e.g.
+  #   CMMS_PUBLIC_BASE_URL=https://work.example.com docker compose up -d
+  CMMS_PUBLIC_BASE_URL: ${CMMS_PUBLIC_BASE_URL:-http://localhost:8000}
 
 services:
   db:

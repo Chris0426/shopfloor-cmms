@@ -33,6 +33,8 @@ def _hermes_settings() -> SimpleNamespace:
         hermes_gateway_url="https://hermes.internal",
         hermes_gateway_secret="s3cr3t",
         jira_forwarder_configured=True,
+        demo_mode=False,
+        demo_reset_minutes=30,
     )
 
 
@@ -395,7 +397,10 @@ def test_ai_description_button_hidden_when_hermes_unconfigured(
     monkeypatch.setattr(web_routes.JiraSyncService, "forward_work_orders_to_mrq", _fwd)
     monkeypatch.setattr(
         web_routes, "get_settings",
-        lambda: SimpleNamespace(hermes_configured=False, jira_forwarder_configured=True),
+        lambda: SimpleNamespace(
+            hermes_configured=False, jira_forwarder_configured=True,
+            demo_mode=False, demo_reset_minutes=30,
+        ),
     )
     r = client.get("/app/work-orders/90018/forward")
     assert r.status_code == 200
@@ -475,7 +480,9 @@ def test_ai_description_unconfigured_returns_disabled_hint(
 
     monkeypatch.setattr(
         web_routes, "get_settings",
-        lambda: SimpleNamespace(hermes_configured=False),
+        lambda: SimpleNamespace(
+            hermes_configured=False, demo_mode=False, demo_reset_minutes=30,
+        ),
     )
     monkeypatch.setattr(web_routes.httpx, "AsyncClient", _NoCall)
     r = client.post(

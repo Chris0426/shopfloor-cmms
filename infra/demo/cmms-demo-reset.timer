@@ -1,0 +1,11 @@
+# Every 30 minutes. Keep in step with CMMS_DEMO_RESET_MINUTES (the banner text).
+[Unit]
+Description=Reset the shopfloor-cmms public demo site every 30 minutes
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

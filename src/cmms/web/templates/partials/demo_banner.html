@@ -1,0 +1,4 @@
+{# 公開示範站橫幅(CMMS_DEMO_MODE=1 才渲染)。文案走 i18n catalog,{minutes} 由 settings 帶入。 #}
+{% if demo_mode %}
+<div class="demo-banner" role="note">{{ t("demo.banner").replace("{minutes}", demo_reset_minutes|string) }}</div>
+{% endif %}

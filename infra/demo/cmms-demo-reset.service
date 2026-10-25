@@ -1,0 +1,12 @@
+# Wipes and reseeds the public demo stack (scripts/demo_reset.sh). Triggered by
+# cmms-demo-reset.timer; not meant to be enabled on its own.
+[Unit]
+Description=Reset the shopfloor-cmms public demo site
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+# /opt/shopfloor-cmms is the deployment checkout of this repo; adjust both paths if yours differs.
+WorkingDirectory=/opt/shopfloor-cmms
+ExecStart=/opt/shopfloor-cmms/scripts/demo_reset.sh

@@ -342,6 +342,19 @@ textarea.form-input { resize: vertical; }
   border-radius: 12px; padding: 13px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .login-card button:hover { background: var(--clay-dark); }
 .lang--login { margin-top: 18px; justify-content: center; }
+/* 公開示範站(CMMS_DEMO_MODE):全站頁首橫幅 + 登入頁示範帳號一鍵登入 */
+.demo-banner { position: sticky; top: 0; z-index: 50; width: 100%; background: var(--clay); color: #fff;
+  font-size: 12px; font-weight: 500; text-align: center; padding: 6px 12px; letter-spacing: .01em; }
+.login-demo { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.login-demo__title { font-size: 12px; font-weight: 500; color: var(--ink-soft); margin: 0; }
+.login-demo__hint { font-size: 12px; color: var(--ink-soft); margin: 2px 0 10px; }
+.login-demo__row { margin: 0 0 8px; }
+/* 以 .login-card 前綴提高權重,覆寫上方 .login-card button 的全寬 clay 樣式 */
+.login-card .login-demo__btn { background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+  margin-top: 0; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; }
+.login-card .login-demo__btn:hover { border-color: var(--clay); background: var(--surface); }
+.login-demo__role { font-size: 13px; font-weight: 500; }
+.login-demo__user { font-size: 12px; color: var(--ink-soft); font-family: ui-monospace, "SF Mono", monospace; }
 .logout-link { display: inline-flex; align-items: center; color: var(--ink-faint); text-decoration: none; }
 .logout-link:hover { color: var(--ink-soft); }
 

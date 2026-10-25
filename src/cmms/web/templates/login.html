@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+  {% include "partials/demo_banner.html" %}
   <div class="login-wrap">
     <div class="login-card">
       <h1 class="login-title">{{ t("app.name") }}</h1>
@@ -22,6 +23,22 @@
         <input id="password" name="password" type="password" autocomplete="current-password" required>
         <button type="submit">{{ t("login.submit") }}</button>
       </form>
+      {% if demo_mode %}
+      <section class="login-demo" aria-label="{{ t('demo.accounts') }}">
+        <p class="login-demo__title">{{ t("demo.accounts") }}</p>
+        <p class="login-demo__hint">{{ t("demo.accounts.hint") }}</p>
+        {% for acct in demo_accounts %}
+        <form method="post" action="/app/login" class="login-demo__row">
+          <input type="hidden" name="username" value="{{ acct.username }}">
+          <input type="hidden" name="password" value="{{ acct.password }}">
+          <button type="submit" class="login-demo__btn">
+            <span class="login-demo__role">{{ t("demo.role." ~ acct.role) }}</span>
+            <span class="login-demo__user">{{ acct.username }}</span>
+          </button>
+        </form>
+        {% endfor %}
+      </section>
+      {% endif %}
       <nav class="lang lang--login" aria-label="language">
         {% for lc in locales %}
         <a href="/app/set-locale?locale={{ lc }}&next=/app/login"

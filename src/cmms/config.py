@@ -21,6 +21,11 @@ class Settings(BaseSettings):
 
     # 部署環境標籤:local / staging / production
     app_env: str = Field(default="local")
+    # 公開示範站模式(docker compose 示範站用):登入頁列出示範帳號 + 一鍵登入、全站頁首橫幅。
+    # 永不與 app_env=production 併用(見 get_settings 檢查)。
+    demo_mode: bool = Field(default=False)
+    # 橫幅顯示的重置週期(分鐘);須與 scripts/demo_reset.sh 的 timer 一致。
+    demo_reset_minutes: int = Field(default=30)
 
     # 非同步 driver 連線字串(asyncpg);Fly 私網為 *.internal(ADR-013)
     database_url: str = Field(
@@ -124,5 +129,8 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """單例設定(快取)。"""
-    return Settings()
+    """單例設定(快取)。示範站模式與 production 併用 → 拒絕啟動(fail-closed)。"""
+    settings = Settings()
+    if settings.demo_mode and settings.app_env == "production":
+        raise RuntimeError("CMMS_DEMO_MODE must not be enabled when CMMS_APP_ENV=production")
+    return settings

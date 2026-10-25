@@ -4048,6 +4048,8 @@ def _hermes_settings(url="http://gw.internal:8080", secret="HSECRET-XYZ"):
         hermes_gateway_url=url,
         hermes_gateway_secret=secret,
         hermes_configured=bool(url and secret),
+        demo_mode=False,
+        demo_reset_minutes=30,
     )
 
 
@@ -4705,3 +4707,60 @@ def test_admin_owners_apply_no_selection_errs(as_user):
         "owner": "Alice Fang", "q": "", "missing": "1",
     }, follow_redirects=False)
     assert r.status_code == 303 and "err=" in r.headers["location"]
+
+
+# ---- 公開示範站模式(CMMS_DEMO_MODE)----
+
+def _demo_settings(demo_mode: bool):
+    """真 Settings(init 參數覆蓋 env);monkeypatch web_routes.get_settings,不動 lru_cache。"""
+    from cmms.config import Settings
+
+    return Settings(demo_mode=demo_mode, demo_reset_minutes=30)
+
+
+def test_login_page_demo_mode_off(anon, monkeypatch):
+    monkeypatch.setattr(web_routes, "get_settings", lambda: _demo_settings(False))
+    r = client.get("/app/login")
+    assert r.status_code == 200
+    assert "login-demo" not in r.text
+    assert "demo-banner" not in r.text
+
+
+def test_login_page_demo_mode_on(anon, monkeypatch):
+    monkeypatch.setattr(web_routes, "get_settings", lambda: _demo_settings(True))
+    r = client.get("/app/login")
+    assert r.status_code == 200
+    assert "demo-banner" in r.text
+    assert "resets every 30 minutes" in r.text
+    for username in ("admin", "jordan.lee", "operator.a"):
+        assert f'name="username" value="{username}"' in r.text
+    assert '<input type="hidden" name="password"' in r.text
+
+
+def test_demo_banner_on_authenticated_page(as_user, _queue_data, monkeypatch):
+    monkeypatch.setattr(web_routes, "get_settings", lambda: _demo_settings(True))
+    r = client.get("/app/work-orders")
+    assert r.status_code == 200
+    assert "demo-banner" in r.text
+
+
+def test_demo_catalog_parity():
+    demo_keys = [k for k in i18n.CATALOG["en"] if k.startswith("demo.")]
+    assert demo_keys
+    for key in demo_keys:
+        assert key in i18n.CATALOG["zh-TW"], key
+        assert key in i18n.CATALOG["vi"], key
+
+
+def test_demo_mode_refused_in_production(monkeypatch):
+    """示範站模式 + production → get_settings() 拒絕(fail-closed)。"""
+    from cmms.config import get_settings
+
+    monkeypatch.setenv("CMMS_DEMO_MODE", "1")
+    monkeypatch.setenv("CMMS_APP_ENV", "production")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="CMMS_DEMO_MODE"):
+            get_settings()
+    finally:
+        get_settings.cache_clear()  # 下次呼叫以還原後的 env 重建

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Reset the public demo site to a clean, freshly seeded state.
+#
+#   1. docker compose down -v --remove-orphans   (wipes the database volume)
+#   2. docker compose up -d --wait db app        (db -> migrations -> app, wait for healthy)
+#   3. docker compose run --rm --no-deps seed    (one-shot seed; its exit code is ours)
+#
+# Everything a visitor changed is gone afterwards: the seed service regenerates the
+# SYNTHETIC data and the demo accounts from scratch. The site is unavailable for roughly
+# 1-2 minutes while the stack comes back up.
+#
+# Meant to run from a host-side timer (infra/demo/cmms-demo-reset.timer, or cron). The
+# timer interval must match CMMS_DEMO_RESET_MINUTES, which is what the banner tells
+# visitors (default: 30).
+#
+# Env:
+#   COMPOSE_BIN   compose command to use  (default: "docker compose")
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+# 刻意不加引號展開,讓 "docker compose" 這種兩段式指令可用。
+COMPOSE="${COMPOSE_BIN:-docker compose}"
+
+log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] demo-reset: $*"; }
+
+log "resetting demo stack in $ROOT"
+# shellcheck disable=SC2086
+$COMPOSE down -v --remove-orphans
+# 長駐服務先起並等 healthy;seed 是一次性容器,分開跑才拿得到它的 exit code
+# (`up -d --wait` 把「跑完就退出」的 seed 容器視為失敗,見 compose v2 行為)。
+# shellcheck disable=SC2086
+$COMPOSE up -d --wait db app
+# shellcheck disable=SC2086
+$COMPOSE run --rm --no-deps seed
+log "done"

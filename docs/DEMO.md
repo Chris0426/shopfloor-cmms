@@ -112,6 +112,22 @@ curl -H "Authorization: Bearer demo-read-api-token-not-a-secret" \
      http://localhost:8000/work-orders                       # 200
 ```
 
+## Running it as a public demo site
+
+The compose file already sets `CMMS_DEMO_MODE=1`. That flag changes two things and nothing
+else: every page carries a banner saying this is a demo with synthetic data that resets
+every `CMMS_DEMO_RESET_MINUTES` (default 30), and the login page lists the three accounts
+above with a one-click sign-in button each.
+
+To keep a public instance clean, `scripts/demo_reset.sh` wipes the volume and reseeds the
+whole stack; `infra/demo/` has a systemd service + timer (and a cron one-liner) that run
+it every 30 minutes. The site is unavailable for a minute or two during each reset.
+
+Be honest about what this is: there is no rate limiting and no TLS (put a reverse proxy in
+front for both), and anyone can sign in as admin by design, so never point a demo-mode
+instance at real data. As a guard, the app refuses to start when `CMMS_DEMO_MODE` is
+combined with `CMMS_APP_ENV=production`. Details: `infra/demo/README.md`.
+
 ## What is deliberately switched off
 
 The demo configures no LLM gateway, no Telegram bot, no Jira, no SMTP and no object

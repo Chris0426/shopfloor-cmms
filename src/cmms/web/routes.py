@@ -257,11 +257,20 @@ def _is_htmx(request: Request) -> bool:
     return request.headers.get("hx-request") == "true"
 
 
+# 公開示範站的示範帳號(與 scripts/seed_demo.sh / docs/DEMO.md 一致;拋棄式憑證,非祕密)。
+_DEMO_ACCOUNTS: tuple[dict[str, str], ...] = (
+    {"username": "admin", "password": "admin123", "role": "admin"},
+    {"username": "jordan.lee", "password": "demo1234", "role": "engineer"},
+    {"username": "operator.a", "password": "demo1234", "role": "operator"},
+)
+
+
 def _render(
     request: Request, name: str, locale: str, *, active: str = "",
     user: UserAccount | None = None, **extra: Any,
 ) -> HTMLResponse:
     """組 base context(t / locale / nav / 使用者)並渲染。t 綁定當前 locale。"""
+    settings = get_settings()
     ctx: dict[str, Any] = {
         "t": lambda key: translate(key, locale),
         "locale": locale,
@@ -276,7 +285,10 @@ def _render(
         "is_operator": (user.role == "operator" if user else False),
         # ADR-020:dock / FAB 助理是否已配置(Hermes gateway url+secret 皆設)。
         # 未配置 → 前端顯示「尚未啟用」誠實狀態、灰態輸入框(不假裝有 agent)。
-        "assistant_enabled": get_settings().hermes_configured,
+        "assistant_enabled": settings.hermes_configured,
+        # 公開示範站模式:全站橫幅 + 登入頁示範帳號(CMMS_DEMO_MODE)。
+        "demo_mode": settings.demo_mode,
+        "demo_reset_minutes": settings.demo_reset_minutes,
         **extra,
     }
     return templates.TemplateResponse(request, name, ctx)
@@ -374,7 +386,8 @@ async def login_form(
 ) -> HTMLResponse | RedirectResponse:
     if user is not None:
         return RedirectResponse(url=_HOME, status_code=307)
-    return _render(request, "login.html", _guest_locale(request), error=False)
+    return _render(request, "login.html", _guest_locale(request), error=False,
+                   demo_accounts=_DEMO_ACCOUNTS)
 
 
 @router.post("/login", response_model=None)
@@ -387,7 +400,8 @@ async def login_submit(
     try:
         _uid, token = await IdentityService(session).authenticate(username, password)
     except AuthenticationError:
-        return _render(request, "login.html", _guest_locale(request), error=True)
+        return _render(request, "login.html", _guest_locale(request), error=True,
+                       demo_accounts=_DEMO_ACCOUNTS)
     resp = RedirectResponse(url=_HOME, status_code=303)
     resp.set_cookie(
         _SESSION_COOKIE, token,
