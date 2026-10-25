@@ -34,7 +34,9 @@ sudo systemctl enable --now cmms-demo-reset.timer
 systemctl list-timers cmms-demo-reset.timer
 ```
 
-`scripts/demo_reset.sh` runs `docker compose down -v --remove-orphans`, brings every
+`scripts/demo_reset.sh` runs `docker compose down -v --remove-orphans`, rebuilds the app image
+(`docker compose build`; a few seconds when nothing changed, so a `git pull` always takes effect
+on the next reset), brings every
 long-running service back (everything except `seed`, so `db` and `app`, plus `edge` when the
 public override is active) with `up -d --wait`, then runs the one-shot `seed` service with `run --rm` so its
 exit code is the script's: the database volume is wiped and the seed rebuilds the synthetic
