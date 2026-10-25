@@ -2,6 +2,7 @@
 # Reset the public demo site to a clean, freshly seeded state.
 #
 #   1. docker compose down -v --remove-orphans   (wipes the database volume)
+#   1b. docker compose build                      (no-op when nothing changed; picks up a git pull)
 #   2. docker compose up -d --wait <every service except seed>
 #                                                (db -> migrations -> app [-> edge], wait for healthy)
 #   3. docker compose run --rm --no-deps seed    (one-shot seed; its exit code is ours)
@@ -32,6 +33,10 @@ log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] demo-reset: $*"; }
 log "resetting demo stack in $ROOT"
 # shellcheck disable=SC2086
 $COMPOSE down -v --remove-orphans
+# `up` 不會因原始碼變了就重建映像;明確 build 一次,layer cache 命中時只花幾秒,
+# 但 git pull 後的程式碼與依賴變更一定會進到下一輪(2026-10-25 首次部署實測教訓)。
+# shellcheck disable=SC2086
+$COMPOSE build
 # 長駐服務先起並等 healthy;seed 是一次性容器,分開跑才拿得到它的 exit code
 # (`up -d --wait` 把「跑完就退出」的 seed 容器視為失敗,見 compose v2 行為)。
 # 服務清單從 compose config 推導,有沒有疊 public override(多一個 edge)都適用。
