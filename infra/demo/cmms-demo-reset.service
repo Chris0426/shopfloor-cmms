@@ -9,4 +9,5 @@ After=network-online.target docker.service
 Type=oneshot
 # /opt/shopfloor-cmms is the deployment checkout of this repo; adjust both paths if yours differs.
 WorkingDirectory=/opt/shopfloor-cmms
+# The public override is selected by /opt/shopfloor-cmms/.env (COMPOSE_FILE=...), not by this unit.
 ExecStart=/opt/shopfloor-cmms/scripts/demo_reset.sh

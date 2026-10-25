@@ -1,0 +1,21 @@
+# Site block for the public demo. Append to the host's /etc/caddy/Caddyfile.
+#
+# Replace work.example.com with the real hostname.
+#
+# DO NOT reload Caddy with this block until the DNS A record resolves: on NXDOMAIN the
+# ACME challenge fails and Caddy backs off, delaying the certificate. Check first:
+#   getent hosts work.example.com
+# then apply:
+#   sudo systemctl reload caddy
+#
+# Caddy terminates TLS and proxies to the `edge` nginx container (rate limiting), which is
+# bound to 127.0.0.1:8000 only. Caddy sets X-Forwarded-For / X-Forwarded-Proto itself.
+
+work.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000
+	log {
+		output stdout
+		format console
+	}
+}

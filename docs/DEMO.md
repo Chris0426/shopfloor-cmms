@@ -121,10 +121,12 @@ above with a one-click sign-in button each.
 
 To keep a public instance clean, `scripts/demo_reset.sh` wipes the volume and reseeds the
 whole stack; `infra/demo/` has a systemd service + timer (and a cron one-liner) that run
-it every 30 minutes. The site is unavailable for a minute or two during each reset.
+it every 30 minutes. The site is unavailable for a minute or two during each reset. For the
+rate-limited public layout (an nginx `edge` container behind the host's Caddy), see
+`docker-compose.public.yml` and `infra/demo/README.md`.
 
-Be honest about what this is: there is no rate limiting and no TLS (put a reverse proxy in
-front for both), and anyone can sign in as admin by design, so never point a demo-mode
+Be honest about what this is: the plain compose stack has no rate limiting and no TLS (put
+a reverse proxy in front for both, or use the public layout above), and anyone can sign in as admin by design, so never point a demo-mode
 instance at real data. As a guard, the app refuses to start when `CMMS_DEMO_MODE` is
 combined with `CMMS_APP_ENV=production`. Details: `infra/demo/README.md`.
 

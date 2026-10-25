@@ -1,0 +1,36 @@
+# 公開部署用的 compose override,只在對外示範站使用;疊在 docker-compose.yml 之上。
+#
+#   啟用方式:repo 根目錄放一個 .env(已被 .gitignore 排除),內容兩行:
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.public.yml
+#     CMMS_PUBLIC_BASE_URL=https://work.example.com
+#   之後所有 `docker compose ...`(含 scripts/demo_reset.sh)都會自動帶上本檔。
+#
+# 與本地示範的差別:
+#   - app 不再對 host 發佈任何 port。
+#   - edge(nginx)負責 per-IP 限流,是唯一綁到 host 的服務,且只綁 127.0.0.1:8000。
+#   - host 上的 Caddy 終結 TLS,再 reverse_proxy 到 127.0.0.1:8000
+#     (見 infra/demo/Caddyfile.snippet;限流參數見 infra/demo/nginx.conf)。
+#
+# `!override` 需要 Docker Compose v2.24.4 以上。
+
+services:
+  app:
+    ports: !override []
+    # compose 合併 override 時 mapping 是逐鍵合併:這裡只新增一個鍵,base 的 *app-env 其餘鍵照留。
+    environment:
+      # 容器內看到的代理來源是 docker 網段,uvicorn 預設只信 127.0.0.1;放行讓 X-Forwarded-* 生效
+      FORWARDED_ALLOW_IPS: "*"
+  edge:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8000:80"
+    volumes:
+      - ./infra/demo/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
