@@ -35,6 +35,7 @@ from cmms.domain.seed.models import SeedWorld
 from cmms.domain.seed.reader import Manifest, ReadResult, SeedEvent, SeedRejected
 from cmms.domain.seed.transform import (
     ACTOR_MAP,
+    DEFAULT_ASSET_TYPE,
     Plan,
     Replayer,
     Tally,
@@ -86,6 +87,7 @@ def build_summary(
         "line_errors": t.line_errors,
         "errors_by_code": dict(sorted(t.errors_by_code.items())),
         "warnings": dict(sorted(t.warnings.items())),
+        "folded": {"seat_folded_to_owner": t.folded["seat_folded_to_owner"]},
     }
 
 
@@ -102,9 +104,16 @@ def log_line_error(rec: Mapping[str, Any]) -> None:
 
 
 class SeedReplayService(DomainService):
-    def __init__(self, session, *, area_map: Mapping[str, str]) -> None:
+    def __init__(
+        self,
+        session,
+        *,
+        area_map: Mapping[str, str],
+        default_asset_type: str | None = DEFAULT_ASSET_TYPE,
+    ) -> None:
         super().__init__(session)
         self.area_map = dict(area_map)
+        self.default_asset_type = default_asset_type
         self._actors: dict[str, Actor] = {}
 
     # ---- 指紋 / 進度 ----
@@ -183,7 +192,9 @@ class SeedReplayService(DomainService):
             self.session.add(sw)
             await self.session.commit()
         maps = await WorkOrderService(self.session).downtime_lookup_maps()
-        rp = Replayer(self.area_map, downtime_maps=maps)
+        rp = Replayer(
+            self.area_map, default_asset_type=self.default_asset_type, downtime_maps=maps
+        )
         t = Tally()
         for rec in reader_errors_in_scope(read, after_seq):
             t.error(rec["code"], rec["seq"], rec["line"], rec["detail"])
@@ -274,8 +285,9 @@ class SeedReplayService(DomainService):
         wo = WorkOrderService(self.session)
         if op == "asset.create":
             asset = AssetService(self.session)
-            async with asset.write(actor):  # station_cls 動態種為 asset_type(label 先 = code)
-                await asset.upsert_lookup(AssetType, a["asset_type"], a["asset_type"])
+            async with asset.write(actor):  # station_cls 動態種為 asset_type(label 先 = code;
+                # null station_cls 的 fallback 碼帶固定說明 label)
+                await asset.upsert_lookup(AssetType, a["asset_type"], a["asset_type_label"])
             await self._stage_progress(world_id, ev.seq)
             await asset.create_asset(
                 a["asset_id"],

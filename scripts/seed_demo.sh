@@ -10,10 +10,22 @@
 # Safe to re-run: the loaders upsert, and steps 4-5 are skipped once the accounts exist
 # (set SEED_FORCE=1 to run them anyway). To start over: `docker compose down -v`.
 #
+# Ledger mode (parity instance, docker-compose.seed.yml): when SEED_DIR is set and
+# non-empty the steps are instead
+#   1. alembic upgrade head
+#   2. the demo accounts (admin / jordan.lee / operator.a, so someone can log in)
+#   3. cmms seed-events "$SEED_DIR" [--until "$SEED_UNTIL"] [--expect-world "$SEED_EXPECT_WORLD"]
+#      (area map: env CMMS_SEED_AREA_MAP, read by the CLI itself)
+# and the CLI's one-line JSON summary is the last line printed; its exit code is ours.
+# No CSV generation, loaders, live scenario or PM generation. Re-runnable: seed-events
+# resumes from seed_world, and a later SEED_UNTIL applies only the new events.
+#
 # Env:
 #   CMMS_DATABASE_URL   required (compose sets it)
 #   DEMO_DATA_DIR       where the CSVs are written  (default: data/demo)
 #   SKIP_MIGRATE=1      do not run alembic
+#   SEED_DIR            ledger directory -> ledger mode (see above)
+#   SEED_UNTIL, SEED_EXPECT_WORLD   optional, passed to `cmms seed-events` when non-empty
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,12 +42,44 @@ ENG_PASS=demo1234
 OPS_USER=operator.a
 OPS_PASS=demo1234
 
-echo "==> 1/5 database migrations"
-if [ "${SKIP_MIGRATE:-0}" != "1" ]; then
-  alembic upgrade head
-else
-  echo "    (skipped)"
+migrate() {
+  if [ "${SKIP_MIGRATE:-0}" != "1" ]; then
+    alembic upgrade head
+  else
+    echo "    (skipped)"
+  fi
+}
+
+if [ -n "${SEED_DIR:-}" ]; then
+  # ---- ledger mode: parity instance fed from a generator ledger ----
+  echo "==> 1/3 database migrations"
+  migrate
+
+  echo "==> 2/3 demo accounts"
+  # 帳號已存在時 user-create 會失敗;重跑屬正常,錯誤輸出吞掉、不中斷。
+  "$CMMS" user-create "$ADMIN_USER" --username "$ADMIN_USER" --name "Demo Admin" \
+      --org plant --role admin --emaint-assignee "Alice Fang" --password "$ADMIN_PASS" 2>/dev/null \
+    || echo "    ${ADMIN_USER} already exists"
+  "$CMMS" user-create "$ENG_USER" --username "$ENG_USER" --name "Jordan Lee" \
+      --org plant --role engineer --emaint-assignee "Jordan Lee" --password "$ENG_PASS" 2>/dev/null \
+    || echo "    ${ENG_USER} already exists"
+  "$CMMS" user-create "$OPS_USER" --username "$OPS_USER" --name "Zone A Operator" \
+      --org plant --role operator --password "$OPS_PASS" 2>/dev/null \
+    || echo "    ${OPS_USER} already exists"
+
+  echo "==> 3/3 cmms seed-events ${SEED_DIR}${SEED_UNTIL:+ --until ${SEED_UNTIL}}"
+  SEED_ARGS=("$SEED_DIR")
+  [ -n "${SEED_UNTIL:-}" ] && SEED_ARGS+=(--until "$SEED_UNTIL")
+  [ -n "${SEED_EXPECT_WORLD:-}" ] && SEED_ARGS+=(--expect-world "$SEED_EXPECT_WORLD")
+  # stdout = 一行 JSON 摘要(行級錯誤走 stderr);收起來最後再印,保證它是最後一行。
+  rc=0
+  SUMMARY="$("$CMMS" seed-events "${SEED_ARGS[@]}")" || rc=$?
+  [ -n "$SUMMARY" ] && printf '%s\n' "$SUMMARY"
+  exit "$rc"
 fi
+
+echo "==> 1/5 database migrations"
+migrate
 
 echo "==> 2/5 generating synthetic CSVs into ${DATA_DIR}"
 "$PY" scripts/generate_demo_data.py --out "$DATA_DIR"

@@ -29,6 +29,7 @@ from cmms.domain.seed.transform import (
     SeedConfigError,
     parse_until,
     resolve_area_map,
+    resolve_default_asset_type,
     simulate,
     window,
 )
@@ -307,10 +308,75 @@ def test_precheck_soft_errors(tmp_path: Path) -> None:
     assert plans[4].op == "wo.void" and plans[4].errors[0][0] == "cancel_mapped_to_void"
 
 
-def test_null_station_cls_is_an_error_not_a_guess(tmp_path: Path) -> None:
+def test_null_station_cls_applied_with_default_type(tmp_path: Path) -> None:
     _, r = load(write_ledger(tmp_path, [_define(1, "EID-97001", station_cls=None)]))
+    rp = Replayer(DEFAULT_AREA_MAP)
+    p = rp.plan(r.events[0])
+    assert p.op == "asset.create" and p.errors == []
+    assert p.args["asset_type"] == "UNCLASSIFIED"
+    assert p.args["asset_type_label"] == "Unclassified (no station class in source)"
     t = simulate(r.events, area_map=DEFAULT_AREA_MAP, after_seq=0, until=UNTIL_ALL)
+    assert t.line_errors == 0 and t.events_applied == 1
+    assert dict(t.skipped_features) == {"asset.define.station_cls:null": 1}
+    t2 = simulate(r.events, area_map=DEFAULT_AREA_MAP, after_seq=0, until=UNTIL_ALL,
+                  default_asset_type="NOCLASS")
+    assert t2.line_errors == 0
+    assert Replayer(DEFAULT_AREA_MAP, default_asset_type="NOCLASS").plan(
+        r.events[0]).args["asset_type"] == "NOCLASS"
+
+
+def test_null_station_cls_disabled_fallback_errors(tmp_path: Path) -> None:
+    _, r = load(write_ledger(tmp_path, [_define(1, "EID-97001", station_cls=None)]))
+    t = simulate(r.events, area_map=DEFAULT_AREA_MAP, after_seq=0, until=UNTIL_ALL,
+                 default_asset_type=None)
     assert dict(t.errors_by_code) == {"station_cls_missing": 1}
+    assert t.events_applied == 0
+
+
+def test_resolve_default_asset_type() -> None:
+    assert resolve_default_asset_type(None, None) == "UNCLASSIFIED"
+    assert resolve_default_asset_type(None, "ENV") == "ENV"
+    assert resolve_default_asset_type("CLI", "ENV") == "CLI"
+    assert resolve_default_asset_type("", "ENV") is None  # 空字串 = 停用
+    assert resolve_default_asset_type(None, "  ") is None
+
+
+def test_seat_id_folded_to_owner_incl_follow_up(tmp_path: Path) -> None:
+    owner, seat = "EID-97001", "EID-97001-N3"
+    evs = [_define(1, owner),
+           _open(2, "2026-07-03T01:00:00Z", 710001, seat),
+           _status(3, "2026-07-03T01:10:00Z", 710001, seat, "OPEN", "IN_PROGRESS"),
+           _status(4, "2026-07-03T01:20:00Z", 710001, owner, "IN_PROGRESS", "COMPLETED",
+                   down=False),
+           _status(5, "2026-07-03T01:30:00Z", 710001, "EID-97009-N1", "COMPLETED", "CLOSED",
+                   down=False)]
+    _, r = load(write_ledger(tmp_path, evs))
+    rp = Replayer(DEFAULT_AREA_MAP)
+    plans = []
+    for ev in r.events:
+        p = rp.plan(ev)
+        if p.op:
+            rp.confirm(p)
+        plans.append(p)
+    assert plans[1].op == "wo.open" and plans[1].args["asset_id"] == owner
+    assert plans[1].folded == "seat_folded_to_owner"
+    assert plans[2].op == "wo.start" and plans[2].errors == []  # 後續座位 id 同折
+    assert plans[3].op == "wo.complete" and plans[3].errors == []  # 直接用機台 id 亦一致
+    assert plans[4].op is None and plans[4].errors[0][0] == "wo_asset_mismatch"  # 折後比對
+    t = simulate(r.events, area_map=DEFAULT_AREA_MAP, after_seq=0, until=UNTIL_ALL)
+    assert dict(t.folded) == {"seat_folded_to_owner": 1}  # 只計 wo.open
+    assert dict(t.errors_by_code) == {"wo_asset_mismatch": 1}
+
+
+def test_seat_fold_with_unknown_owner_is_unknown_asset(tmp_path: Path) -> None:
+    evs = [_define(1, "EID-97001"),
+           _open(2, "2026-07-03T01:00:00Z", 710001, "EID-20002-N1"),
+           _status(3, "2026-07-03T01:10:00Z", 710001, "EID-20002-N1", "OPEN", "IN_PROGRESS")]
+    _, r = load(write_ledger(tmp_path, evs))
+    t = simulate(r.events, area_map=DEFAULT_AREA_MAP, after_seq=0, until=UNTIL_ALL)
+    assert dict(t.errors_by_code) == {"unknown_asset": 2}
+    assert t.folded["seat_folded_to_owner"] == 0
+    assert "EID-20002" in t.records[0]["detail"]
 
 
 def test_is_downtime_mismatch_is_a_warning(tmp_path: Path) -> None:

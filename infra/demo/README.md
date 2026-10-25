@@ -93,6 +93,10 @@ Order of operations:
    `sudo systemctl reload caddy`. Reloading before DNS resolves makes the ACME challenge
    fail on NXDOMAIN and Caddy backs off, delaying the certificate.
 
+The parity instance (a ledger replay for recording and parity checks, see
+`docs/SYNTHETIC-INSTANCE.md` §9) is a separate stack: it uses `docker-compose.seed.yml` with its
+own project name (`COMPOSE_PROJECT_NAME=cmms-a18`) and is never put under the reset timer.
+
 ## What this does not do
 
 - **Rate limiting only with the public override.** The plain compose stack has none; with

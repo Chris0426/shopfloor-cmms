@@ -881,6 +881,12 @@ def seed_events(
     area_map: str = typer.Option(
         None, "--area-map", help='area→line JSON(覆寫預設;亦可設 env CMMS_SEED_AREA_MAP)'
     ),
+    default_asset_type: str = typer.Option(
+        None,
+        "--default-asset-type",
+        help="station_cls 為 null 時的 asset_type(預設 UNCLASSIFIED;空字串=停用,改記行級錯誤;"
+        "亦可設 env CMMS_SEED_DEFAULT_ASSET_TYPE)",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="只解析 + 驗證 + 預檢,不連 DB、不寫入"),
 ) -> None:
     """重播 tendline.seed.v1.1 種子帳(經既有 domain service;見 docs/SYNTHETIC-INSTANCE.md)。
@@ -906,6 +912,7 @@ def seed_events(
         SeedConfigError,
         parse_until,
         resolve_area_map,
+        resolve_default_asset_type,
         simulate,
     )
 
@@ -919,6 +926,9 @@ def seed_events(
     try:
         until_dt = parse_until(until)
         amap = resolve_area_map(area_map, os.environ.get("CMMS_SEED_AREA_MAP"))
+        fallback_type = resolve_default_asset_type(
+            default_asset_type, os.environ.get("CMMS_SEED_DEFAULT_ASSET_TYPE")
+        )
         manifest_path = seed_dir / "seed-manifest.json"
         if not manifest_path.is_file():
             raise SeedRejected("manifest", f"{manifest_path} not found")
@@ -932,7 +942,13 @@ def seed_events(
 
     if dry_run:
         # 無 DB:視為全新 instance(從 seq 1 起);預檢規則與實跑共用 Replayer
-        tally = simulate(read.events, area_map=amap, after_seq=0, until=until_dt)
+        tally = simulate(
+            read.events,
+            area_map=amap,
+            after_seq=0,
+            until=until_dt,
+            default_asset_type=fallback_type,
+        )
         for rec in reader_errors_in_scope(read, 0):
             tally.error(rec["code"], rec["seq"], rec["line"], rec["detail"])
         for rec in tally.records:
@@ -945,7 +961,9 @@ def seed_events(
 
     async def _run() -> dict:
         async with get_sessionmaker()() as session:
-            outcome = await SeedReplayService(session, area_map=amap).replay(
+            outcome = await SeedReplayService(
+                session, area_map=amap, default_asset_type=fallback_type
+            ).replay(
                 manifest, read, until=until_dt
             )
         return outcome.summary()

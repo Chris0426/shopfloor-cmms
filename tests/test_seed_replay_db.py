@@ -21,7 +21,7 @@ from testcontainers.postgres import PostgresContainer  # noqa: E402
 
 from cmms.db import Base  # noqa: E402
 from cmms.domain.asset import models as _asset_models  # noqa: E402, F401
-from cmms.domain.asset.models import Asset, AssetRelationshipType  # noqa: E402
+from cmms.domain.asset.models import Asset, AssetRelationshipType, AssetType  # noqa: E402
 from cmms.domain.contacts import models as _contacts_models  # noqa: E402, F401
 from cmms.domain.failure_vocab import models as _fv_models  # noqa: E402, F401
 from cmms.domain.identity import models as _identity_models  # noqa: E402, F401
@@ -39,7 +39,15 @@ from cmms.domain.task import models as _task_models  # noqa: E402, F401
 from cmms.domain.work_order import models as _wo_models  # noqa: E402, F401
 from cmms.domain.work_order.models import WoNoteType, WorkOrder, WorkOrderNote  # noqa: E402
 from cmms.domain.work_order.service import WorkOrderService  # noqa: E402
-from tests.test_seed_reader import WORLD, _base_events, _define, load, write_ledger  # noqa: E402
+from tests.test_seed_reader import (  # noqa: E402
+    WORLD,
+    _base_events,
+    _define,
+    _open,
+    _status,
+    load,
+    write_ledger,
+)
 
 PARENT, CHILD = "EID-97001", "EID-97002"
 WO = 710001
@@ -183,3 +191,28 @@ async def test_state_mismatch_and_until_regressed_reject(session, tmp_path: Path
     assert e.value.code == "state_mismatch"
     sw = await session.get(SeedWorld, WORLD)
     assert sw is not None and sw.generator_version == "test-gen"  # 拒讀不改指紋
+
+
+async def test_seat_level_wo_folds_to_owner_and_null_station_cls_unclassified(
+    session, tmp_path: Path
+) -> None:
+    """Board 裁決:座位 id 工單落到所屬機台;station_cls null 的資產以 UNCLASSIFIED 建立。"""
+    owner, jig = "EID-97001", "EID-97003"
+    evs = [
+        _define(1, owner),
+        _define(2, jig, station_cls=None),
+        _open(3, "2026-07-03T01:00:00Z", WO, f"{owner}-N2"),
+        _status(4, "2026-07-03T01:10:00Z", WO, f"{owner}-N2", "OPEN", "IN_PROGRESS"),
+    ]
+    summary = await _replay(session, write_ledger(tmp_path / "w", evs),
+                            datetime(2026, 7, 10, tzinfo=UTC))
+    assert summary["line_errors"] == 0, summary
+    assert summary["folded"] == {"seat_folded_to_owner": 1}
+    assert summary["skipped_features"] == {"asset.define.station_cls:null": 1}
+    wo = await session.get(WorkOrder, WO)
+    assert wo is not None and wo.asset_id == owner and wo.status == "IN_PROGRESS"
+    assert wo.brief_description == "feeder jam"  # 不改寫
+    a = await session.get(Asset, jig)
+    assert a is not None and a.asset_type == "UNCLASSIFIED"
+    t = await session.get(AssetType, "UNCLASSIFIED")
+    assert t is not None and t.label == "Unclassified (no station class in source)"

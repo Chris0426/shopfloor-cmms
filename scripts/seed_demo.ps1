@@ -6,6 +6,9 @@
 #   .\scripts\seed_demo.ps1
 #
 # Safe to re-run: the loaders upsert; accounts + live scenario are skipped once they exist.
+#
+# Local-dev only: the ledger mode of seed_demo.sh (SEED_DIR, docker-compose.seed.yml) is not
+# mirrored here; run `cmms seed-events` directly instead (docs/SYNTHETIC-INSTANCE.md).
 
 $ErrorActionPreference = "Stop"
 

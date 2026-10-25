@@ -41,6 +41,7 @@ cmms seed-events SEED_DIR [--until ISO] [--expect-world ID] [--area-map JSON] [-
 | `--until` | Cut-off. ISO-8601; a **naive** value is Asia/Taipei, `Z` or an offset is honoured; omitted = now. Only events with `at <= until` are applied. |
 | `--expect-world` | Reject the ledger unless the manifest's `world_id` matches. |
 | `--area-map` | Override the area → line map (JSON object). See §3. |
+| `--default-asset-type` | Asset type for `asset.define` events whose `station_cls` is null (default `UNCLASSIFIED`; also env `CMMS_SEED_DEFAULT_ASSET_TYPE`). An empty string disables the fallback. See §5.1. |
 | `--dry-run` | Parse, validate and pre-check every event **without touching the database**, then print the summary with `events_applied` = the count that *would* apply. A dry run cannot see a previous run's progress, so it always assumes a fresh instance (resume from seq 1). |
 
 Output and exit codes:
@@ -48,7 +49,7 @@ Output and exit codes:
 - **0** — success. Exactly one compact JSON line on stdout (keys sorted):
   `schema`, `world_id`, `generator_version`, `fleet_digest`, `horizon_start`, `applied_until`
   (UTC `Z`), `events_applied`, `events_resumed_from_seq`, `skipped_kinds`, `skipped_features`,
-  `line_errors`, `errors_by_code`, `warnings`.
+  `line_errors`, `errors_by_code`, `warnings`, `folded` (`{"seat_folded_to_owner": n}`, see §5.2).
 - **2** — the ledger was rejected as a whole. One JSON line on stderr:
   `{"rejected": "<code>", "detail": "..."}`. Codes: `manifest` (missing or malformed),
   `schema_mismatch`, `world_mismatch`, `manifest_mismatch` (a day file's sha256, line count or
@@ -103,15 +104,38 @@ kinds, the mapped lines) are seeded idempotently with provenance `human:cli`.
 
 | Kind | Domain operation |
 |---|---|
-| `asset.define` | `create_asset` (`display_name` → description, `station_cls` → asset type, upserted with label = code, `area` → line); `parent_asset_id` → `link_containment` once the batch of defines is complete. Site `PLANT-1`, no department. |
+| `asset.define` | `create_asset` (`display_name` → description, `station_cls` → asset type, upserted with label = code — or `UNCLASSIFIED` when null, §5.1 — `area` → line); `parent_asset_id` → `link_containment` once the batch of defines is complete. Site `PLANT-1`, no department. |
 | `inventory.item` | `create_item`, then `adjust_on_hand` to **20** (an `ADJUST` ledger entry at the event's time). The event's `asset_id` is the sentinel `EID-00000` and is never looked up. |
-| `wo.open` | `open_work_order(work_order_no=…, at=…, failure_started_at=…)`. `failure_started_at` must be strictly before `at`, otherwise line error `fsa_after_open` and the work order opens without it. |
+| `wo.open` | `open_work_order(work_order_no=…, at=…, failure_started_at=…)`. A seat-level `asset_id` is folded to its owner machine first (§5.2). `failure_started_at` must be strictly before `at`, otherwise line error `fsa_after_open` and the work order opens without it. |
 | `wo.status` | By `to_status`: `IN_PROGRESS` → `start_work` (from OPEN) or `resume_work`; `ON_HOLD` → `hold_work(hold_reason)`; `COMPLETED` → `complete_work`; `CLOSED` → `close_work_order`; `VOIDED` → `void_work_order`; `CANCELLED` → `cancel_reactive_report` from OPEN, otherwise `void_work_order` plus line error `cancel_mapped_to_void`. All with `at` = the event time, so `status_history.changed_at` equals the ledger. |
 | `wo.note` | `add_note(entry_type, body, occurred_at=at)`. |
 | `wo.part` | `issue_part_to_work_order(…, at=at)`. |
 | `wo.field` | `diagnosis` / `action_taken` / `production_resumed_at` / `scheduled_date` / `downtime_estimated` → `set_seed_field` (whitelisted setter); `confirmed_reason_code` → `set_confirmed_reason`. `production_resumed_at` must be after the first `IN_PROGRESS` (else `opened_at`), else line error `pra_not_after_start`; on a PM work order it is `pra_non_reactive`. |
 
 Notes and part issues carry the idempotency key `seed:<world_id>:<seq>`.
+
+### 5.1 `station_cls: null` → `UNCLASSIFIED`
+
+Some assets in the ledger have no station class: jigs, fixtures, benches. The Board treats these
+as "not measurable" machines, meaning they exist and get work orders but have no MES station to
+measure. Following the Board's ruling, they are created with `asset_type = UNCLASSIFIED`. That
+lookup is upserted with the label "Unclassified (no station class in source)", so the code says
+plainly that the source had no class; it does not invent a real type. They are applied (not
+errors) and counted under `skipped_features` as `asset.define.station_cls:null`.
+`--default-asset-type CODE` (or `CMMS_SEED_DEFAULT_ASSET_TYPE`) changes the code. An empty string
+disables the fallback: the asset is then not created, which is a line error
+`station_cls_missing`, and its events become `unknown_asset`.
+
+### 5.2 Seat-level work orders fold to the owner machine
+
+Seats (nest positions) are not assets here. A work-order `asset_id` matching
+`^(EID-\d{5})-N\d+$` (for example `EID-12345-N3`) is folded to the owner machine id (`EID-12345`)
+on `wo.open` **and** on every later `wo.*` event for that work order. This is the same rule as the
+Board's `normalize_wo`, which folds seat ids to the parent EID when it reads this CMMS, so both
+sides attribute the work order to the same machine. `brief_description` is not changed.
+`wo_asset_mismatch` is checked against the folded id. Each folded `wo.open` that is applied
+counts once in `folded.seat_folded_to_owner`; follow-up events are then normal. If the owner
+machine is not in master, the open is the usual `unknown_asset` error.
 
 The ledger's `is_downtime` flag is **not** applied — the CMMS computes downtime itself from the
 status history. When the ledger's flag disagrees with `segment_is_downtime` for that segment, it
@@ -124,8 +148,8 @@ is counted under `warnings.is_downtime_mismatch` (not a line error).
 | `asset.schedule_state`, `pm.schedule` (reserved), unknown kinds | `skipped_kinds` | No equivalent concept here (production scheduling is not this system's job); unknown kinds are the contract's forward-compatibility rule. |
 | `wo.scope` events, non-empty `wo.open.scope` | `skipped_features` (`wo.scope`, `wo.open.scope`) | The CMMS has no sub-unit scope on a work order. |
 | `asset.define.roles` | `skipped_features` (`asset.define.roles:<role>`) | Co-tagging / aliasing has no equivalent; containment is taken from `parent_asset_id`. |
-| `asset.define.seats` | `skipped_features` (`asset.define.seats`) | Seats (nest positions) are not assets here. Seat-level work orders (`asset_id` like `EID-12345-N3`) therefore fail with `unknown_asset` — they are not re-attributed to the owning machine, because that would be a guess. |
-| `asset.define` with `station_cls: null` | line error `station_cls_missing` | `asset_type` is mandatory and there is no defined mapping for "no station"; the asset is not created and its events become `unknown_asset`. |
+| `asset.define.seats` | `skipped_features` (`asset.define.seats`) | Seats (nest positions) are not assets here; seat-level work orders fold to the owner machine (§5.2). |
+| `asset.define` with `station_cls: null` | `skipped_features` (`asset.define.station_cls:null`) | Applied with asset type `UNCLASSIFIED` (§5.1); only a line error `station_cls_missing` when the fallback is disabled. |
 | `wo.field assigned_vendor` | `skipped_features` (`wo.field.assigned_vendor`) | No governed setter exists. |
 | `stations`, `in_service_from`, `sub_units`, `pm_source_id` | not counted | Not represented in the CMMS. |
 
@@ -163,3 +187,43 @@ render stored timestamps and look the same whenever you open them. The exception
 Everything else renders stored timestamps. Downtime is computed from the status history and
 locked at close (`downtime_minutes`), so it does not drift. There is no "N minutes ago" style
 relative-time text anywhere in the UI.
+
+## 9. Run it with docker compose
+
+`docker-compose.seed.yml` is an override on `docker-compose.yml` that turns the stack into a
+**parity instance**: the `seed` service skips the demo generator and replays a ledger instead
+(`scripts/seed_demo.sh` switches to ledger mode when `SEED_DIR` is set). Differences from the
+demo stack: `CMMS_DEMO_MODE=0` (no banner, no one-click accounts on the login page), the app is
+published on `127.0.0.1:8001` only (no `edge`), the image is tagged `shopfloor-cmms:seed`, and
+there is **no reset timer** — never run `scripts/demo_reset.sh` against it.
+
+Write a `.env` in the checkout (git-ignored; compose reads it by itself):
+
+```dotenv
+COMPOSE_PROJECT_NAME=cmms-a18
+COMPOSE_FILE=docker-compose.yml:docker-compose.seed.yml
+SEED_DIR=/abs/path/to/ledger/seed
+SEED_UNTIL=2026-10-01T19:36:00
+SEED_EXPECT_WORLD=<world_id from seed-manifest.json>
+CMMS_PUBLIC_BASE_URL=http://127.0.0.1:8001
+```
+
+`COMPOSE_PROJECT_NAME` is **required** when the demo stack runs on the same host: without it
+the project name defaults to the directory name and containers or the `pgdata` volume can
+collide. `SEED_DIR` is the host directory, mounted read-only at `/seed`. Add
+`CMMS_SEED_AREA_MAP='{"key":"Zone A", ...}'` (single-quoted, so the JSON survives `.env`
+parsing) only for a ledger with non-default area keys; check it with
+`docker compose config | grep CMMS_SEED_AREA_MAP`.
+
+```bash
+docker compose build
+docker compose up -d --wait db app
+docker compose run --rm --no-deps seed     # last line = the seed-events JSON summary; exit code is the CLI's
+```
+
+The seed step runs migrations, creates the usual accounts (`admin`, `jordan.lee`,
+`operator.a`; see `docs/DEMO.md`) and then `cmms seed-events /seed --until … --expect-world …`.
+To advance the cut-off later, raise `SEED_UNTIL` in `.env` (it may only move forward, see §7)
+and run `docker compose run --rm --no-deps seed` again: only the new events are applied, and
+the existing accounts are left alone. Tear the instance down, database included, with
+`docker compose down -v`.

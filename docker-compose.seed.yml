@@ -1,0 +1,49 @@
+# Parity instance(對照實例)用的 compose override:疊在 docker-compose.yml 之上,
+# 資料不走示範產生器,而是由 `cmms seed-events` 重播外部產生器的種子帳(ledger)。
+# 用途是拍片錄影與對帳(parity check),細節見 docs/SYNTHETIC-INSTANCE.md。
+#
+#   必須用獨立的 compose project 名稱:COMPOSE_PROJECT_NAME=cmms-a18(或每次 `-p cmms-a18`)。
+#   不設的話 project 名稱取資料夾名,容器與 pgdata volume 可能撞到同機的示範站 stack。
+#
+#   啟用方式:checkout 根目錄放一個 .env(已被 .gitignore 排除),例如:
+#     COMPOSE_PROJECT_NAME=cmms-a18
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.seed.yml
+#     SEED_DIR=/abs/path/to/ledger/seed        # 含 seed-manifest.json + seed-*.jsonl
+#     SEED_UNTIL=2026-10-01T19:36:00           # naive = Asia/Taipei;留空 = now
+#     SEED_EXPECT_WORLD=<world_id>             # 選填,manifest 的 world_id 不符即拒讀
+#     CMMS_SEED_AREA_MAP='{"key":"Zone A"}'    # 選填,舊 ledger 的 area key 對照;JSON 請用單引號包
+#     CMMS_PUBLIC_BASE_URL=http://127.0.0.1:8001
+#
+#   指令順序:
+#     docker compose build
+#     docker compose up -d --wait db app
+#     docker compose run --rm --no-deps seed       # 最後一行 = seed-events 的 JSON 摘要;exit code 照傳
+#   往後推進 cut-off:改 .env 的 SEED_UNTIL(只能往後),再跑一次 `run --rm --no-deps seed`(從 seed_world 續跑)。
+#   拆掉:docker compose down -v                    # 連 DB volume 一起刪
+#
+# 與示範站的差別:
+#   - 本實例「沒有」重置計時器:絕不可對它跑 scripts/demo_reset.sh,也不掛 cmms-demo-reset.timer。
+#   - CMMS_DEMO_MODE=0:沒有示範橫幅、登入頁沒有一鍵帳號(帳號 admin / jordan.lee / operator.a 仍會建立)。
+#   - app 只綁 127.0.0.1:8001,不和示範站的 8000 相撞,也不對外;沒有 edge。
+#   - 映像標籤改用 shopfloor-cmms:seed,不覆寫示範站的 shopfloor-cmms:demo。
+#
+# `!override` 需要 Docker Compose v2.24.4 以上。
+
+services:
+  app:
+    image: shopfloor-cmms:seed
+    ports: !override ["127.0.0.1:8001:8080"]
+    # compose 合併 override 時 mapping 是逐鍵合併:這裡只覆寫一個鍵,base 的 *app-env 其餘鍵照留。
+    environment:
+      CMMS_DEMO_MODE: "0"
+  seed:
+    image: shopfloor-cmms:seed
+    environment:
+      CMMS_DEMO_MODE: "0"
+      SEED_DIR: /seed
+      SEED_UNTIL: ${SEED_UNTIL:-}
+      SEED_EXPECT_WORLD: ${SEED_EXPECT_WORLD:-}
+      CMMS_SEED_AREA_MAP: ${CMMS_SEED_AREA_MAP:-}
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ${SEED_DIR:?set SEED_DIR to the ledger directory}:/seed:ro

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -35,6 +36,30 @@ ACTOR_MAP: dict[str, tuple[str, str]] = {
     "role:planner": ("synth.planner", "admin"),
     "role:system": ("synth.system", "admin"),
 }
+
+# Board ruling(2026-10-26):station_cls 為 null 的資產(治具/工作台;Board 視為「不可量測」機台)
+# 照建,asset_type 落這個受控碼。可由 --default-asset-type / CMMS_SEED_DEFAULT_ASSET_TYPE 覆寫;
+# 空字串 = 停用 fallback(回到 station_cls_missing 行級錯誤)。
+DEFAULT_ASSET_TYPE = "UNCLASSIFIED"
+DEFAULT_ASSET_TYPE_LABEL = "Unclassified (no station class in source)"
+# Board ruling(2026-10-26):座位級工單的 asset_id(EID-xxxxx-N<n>)折回所屬機台 EID,
+# 與 Board `normalize_wo`(board_capacity.fold_seat_id)同規則。
+_SEAT_ID_RE = re.compile(r"^(EID-\d{5})-N\d+$")
+
+
+def fold_seat_id(asset_id: str) -> tuple[str, bool]:
+    """座位 id → (所屬機台 EID, True);非座位 id 原樣 → (asset_id, False)。"""
+    m = _SEAT_ID_RE.match(asset_id)
+    return (m.group(1), True) if m else (asset_id, False)
+
+
+def resolve_default_asset_type(cli_value: str | None, env_value: str | None) -> str | None:
+    """null station_cls 的 fallback asset_type:CLI > env > `UNCLASSIFIED`;空字串 → None(停用)。"""
+    raw = cli_value if cli_value is not None else env_value
+    if raw is None:
+        return DEFAULT_ASSET_TYPE
+    return raw.strip() or None
+
 
 SKIPPED_KINDS = ("asset.schedule_state", "pm.schedule")  # 決策 10:跳過、另計
 SEED_FIELDS = ("diagnosis", "action_taken", "production_resumed_at", "scheduled_date",
@@ -116,6 +141,7 @@ class Plan:
     warnings: list[str] = field(default_factory=list)
     features: list[str] = field(default_factory=list)
     skipped_kind: str | None = None
+    folded: str | None = None  # 套用成功才計入 Tally.folded(如 seat_folded_to_owner)
 
 
 @dataclass(slots=True)
@@ -138,6 +164,7 @@ class Tally:
     skipped_features: Counter = field(default_factory=Counter)
     errors_by_code: Counter = field(default_factory=Counter)
     warnings: Counter = field(default_factory=Counter)
+    folded: Counter = field(default_factory=Counter)
     line_errors: int = 0
     records: list[dict[str, Any]] = field(default_factory=list)  # {code, seq, line, detail}
 
@@ -154,9 +181,11 @@ class Replayer:
         self,
         area_map: Mapping[str, str],
         *,
+        default_asset_type: str | None = DEFAULT_ASSET_TYPE,
         downtime_maps: tuple[Mapping[str, bool], Mapping[str, bool]] | None = None,
     ) -> None:
         self.area_map = dict(area_map)
+        self.default_asset_type = default_asset_type
         self.downtime_maps = downtime_maps
         self.assets: set[str] = set()
         self.items: set[str] = set()
@@ -218,15 +247,23 @@ class Replayer:
         if area is None or area not in self.area_map:
             p.errors.append(("unknown_area", f"area {area!r} not in area map"))
             return
-        if d["station_cls"] is None:
-            # asset_type 必填;契約 null = 無站別(治具/工作台),不猜一個型別(護欄 #7)
-            p.errors.append(("station_cls_missing", f"asset {ev.asset_id} has null station_cls"))
-            return
+        asset_type, type_label = d["station_cls"], d["station_cls"]
+        if asset_type is None:
+            # 契約 null = 無站別(治具/工作台)。Board 裁決:照建、落受控 fallback 碼(明示的
+            # 「未分類」,不是猜一個真實型別);fallback 停用時維持行級錯誤。
+            if self.default_asset_type is None:
+                p.errors.append(
+                    ("station_cls_missing", f"asset {ev.asset_id} has null station_cls")
+                )
+                return
+            asset_type, type_label = self.default_asset_type, DEFAULT_ASSET_TYPE_LABEL
+            p.features.append("asset.define.station_cls:null")
         p.op = "asset.create"
         p.args = {
             "asset_id": ev.asset_id,
             "description": d["display_name"],
-            "asset_type": d["station_cls"],
+            "asset_type": asset_type,
+            "asset_type_label": type_label,
             "line": self.area_map[area],
             "parent": d["parent_asset_id"],
         }
@@ -242,15 +279,16 @@ class Replayer:
     def _wo(self, ev: SeedEvent, p: Plan) -> WoState | None:
         """非 open 的 wo.* 共用前置:工單須已開、asset 一致。"""
         no = ev.data["work_order_no"]
+        aid, _ = fold_seat_id(ev.asset_id)  # 與 wo.open 同一折法;比對用折後 id
         wo = self.wos.get(no)
         if wo is None:
-            if ev.asset_id not in self.assets:
-                p.errors.append(("unknown_asset", f"asset {ev.asset_id} not in master (wo {no})"))
+            if aid not in self.assets:
+                p.errors.append(("unknown_asset", f"asset {aid} not in master (wo {no})"))
             else:
                 p.errors.append(("unknown_wo", f"work order {no} was not opened"))
             return None
-        if ev.asset_id != wo.asset_id:
-            p.errors.append(("wo_asset_mismatch", f"wo {no} asset {ev.asset_id} != {wo.asset_id}"))
+        if aid != wo.asset_id:
+            p.errors.append(("wo_asset_mismatch", f"wo {no} asset {aid} != {wo.asset_id}"))
             return None
         return wo
 
@@ -262,9 +300,12 @@ class Replayer:
         if no in self.wos:
             p.errors.append(("wo_duplicate_open", f"wo {no} opened twice"))
             return
-        if ev.asset_id not in self.assets:
-            p.errors.append(("unknown_asset", f"asset {ev.asset_id} not in master (wo {no})"))
+        aid, folded = fold_seat_id(ev.asset_id)
+        if aid not in self.assets:
+            p.errors.append(("unknown_asset", f"asset {aid} not in master (wo {no})"))
             return
+        if folded:
+            p.folded = "seat_folded_to_owner"
         fsa = parse_utc_z(d["failure_started_at"]) if d["failure_started_at"] else None
         if fsa is not None and not fsa < ev.at:
             p.errors.append(("fsa_after_open", f"wo {no}: failure_started_at not before open"))
@@ -272,7 +313,7 @@ class Replayer:
         p.op = "wo.open"
         p.args = {
             "work_order_no": no,
-            "asset_id": ev.asset_id,
+            "asset_id": aid,
             "work_type": d["work_type"],
             "brief_description": d["brief_description"],
             "failure_started_at": fsa,
@@ -403,6 +444,8 @@ def tally_plan(t: Tally, plan: Plan, *, applied: bool) -> None:
         t.error(code, plan.event.seq, plan.event.line, detail)
     if applied:
         t.events_applied += 1
+        if plan.folded:
+            t.folded[plan.folded] += 1
 
 
 def window(events: Iterable[SeedEvent], *, after_seq: int, until: datetime) -> list[SeedEvent]:
@@ -416,9 +459,10 @@ def simulate(
     area_map: Mapping[str, str],
     after_seq: int,
     until: datetime,
+    default_asset_type: str | None = DEFAULT_ASSET_TYPE,
 ) -> Tally:
     """dry-run:全部 plan 視為成功,只計數(無 DB)。`after_seq` 之前的事件只推進狀態。"""
-    rp = Replayer(area_map)
+    rp = Replayer(area_map, default_asset_type=default_asset_type)
     t = Tally()
     evs = list(events)
     for ev in evs:
