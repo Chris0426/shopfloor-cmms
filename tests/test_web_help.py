@@ -86,7 +86,7 @@ def test_help_index_lists_both_docs(as_user) -> None:
     r = client.get("/app/help")
     assert r.status_code == 200
     assert "Telegram 助理:綁定與使用" in r.text
-    assert "Jira 權杖:讓 CMMS 用你的身分開 MRQ" in r.text
+    assert "Jira 權杖:讓 Tendline Work 用你的身分開 MRQ" in r.text
 
 
 def test_help_doc_page_renders_steps(as_user) -> None:

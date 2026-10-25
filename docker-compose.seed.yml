@@ -36,6 +36,8 @@ services:
     # compose 合併 override 時 mapping 是逐鍵合併:這裡只覆寫一個鍵,base 的 *app-env 其餘鍵照留。
     environment:
       CMMS_DEMO_MODE: "0"
+      # 錄影實例在 .env 設 CMMS_UI_HIDE_JIRA=1:工單詳情頁不顯示 Jira MRQ 區(預設 0 = 顯示)。
+      CMMS_UI_HIDE_JIRA: ${CMMS_UI_HIDE_JIRA:-0}
   seed:
     image: shopfloor-cmms:seed
     environment:

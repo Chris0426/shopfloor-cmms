@@ -293,6 +293,8 @@ def _render(
         # 公開示範站模式:全站橫幅 + 登入頁示範帳號(CMMS_DEMO_MODE)。
         "demo_mode": settings.demo_mode,
         "demo_reset_minutes": settings.demo_reset_minutes,
+        # 錄影 / 對照實例:工單詳情頁隱藏 Jira MRQ 區(CMMS_UI_HIDE_JIRA)。
+        "ui_hide_jira": settings.ui_hide_jira,
         **extra,
     }
     return templates.TemplateResponse(request, name, ctx)

@@ -35,6 +35,7 @@ def _hermes_settings() -> SimpleNamespace:
         jira_forwarder_configured=True,
         demo_mode=False,
         demo_reset_minutes=30,
+        ui_hide_jira=False,
     )
 
 
@@ -399,7 +400,7 @@ def test_ai_description_button_hidden_when_hermes_unconfigured(
         web_routes, "get_settings",
         lambda: SimpleNamespace(
             hermes_configured=False, jira_forwarder_configured=True,
-            demo_mode=False, demo_reset_minutes=30,
+            demo_mode=False, demo_reset_minutes=30, ui_hide_jira=False,
         ),
     )
     r = client.get("/app/work-orders/90018/forward")
@@ -482,6 +483,7 @@ def test_ai_description_unconfigured_returns_disabled_hint(
         web_routes, "get_settings",
         lambda: SimpleNamespace(
             hermes_configured=False, demo_mode=False, demo_reset_minutes=30,
+            ui_hide_jira=False,
         ),
     )
     monkeypatch.setattr(web_routes.httpx, "AsyncClient", _NoCall)

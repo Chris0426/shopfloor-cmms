@@ -301,6 +301,8 @@
   {% endif %}
 </div>
 
+{# CMMS_UI_HIDE_JIRA=1(錄影 / 對照實例)→ 整個 Jira MRQ 區不渲染 #}
+{% if not ui_hide_jira %}
 {# ---- Jira MRQ 連結(ADR-020 決策 1 修訂:cmms 直呼 Jira REST 開單/同步;功能已上線)---- #}
 <p class="tl-label">{{ t("wo.links") }}</p>
 <div class="wo-section">
@@ -343,6 +345,7 @@
     </label>
   </form>
 </div>
+{% endif %}{# not ui_hide_jira #}
 {% endif %}{# not is_operator:領料 + MRQ 兩區 #}
 
 {# ---- 危險操作(取消/作廢 —— 非刪除:SoR 保留稽核軌跡,終態單仍可查)。

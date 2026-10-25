@@ -1,7 +1,8 @@
-# Shopfloor CMMS
+# Tendline Work
 
-A production maintenance management system for a manufacturing plant — rebuilt from a legacy
-commercial CMMS, with an LLM agent wired in under a hard governance boundary.
+Tendline Work (repository `shopfloor-cmms`) is a production maintenance management system for a
+manufacturing plant — rebuilt from a legacy commercial CMMS, with an LLM agent wired in under a
+hard governance boundary.
 
 **The agent can read anything in this system. It can write nothing.**
 Every action an agent takes lands as a *proposal* that a human confirms.

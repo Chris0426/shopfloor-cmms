@@ -192,6 +192,9 @@ def test_login_page_renders(anon):
     assert r.status_code == 200
     assert 'name="password"' in r.text
     assert "Sign in" in r.text
+    # 品牌:UI 顯示 Tendline Work(repo / 套件名仍為 shopfloor-cmms)
+    assert "Tendline Work" in r.text
+    assert "Shopfloor CMMS" not in r.text
 
 
 def test_login_success_sets_cookie(anon, monkeypatch):
@@ -4101,6 +4104,7 @@ def _hermes_settings(url="http://gw.internal:8080", secret="HSECRET-XYZ"):
         hermes_configured=bool(url and secret),
         demo_mode=False,
         demo_reset_minutes=30,
+        ui_hide_jira=False,
     )
 
 
@@ -4815,3 +4819,29 @@ def test_demo_mode_refused_in_production(monkeypatch):
             get_settings()
     finally:
         get_settings.cache_clear()  # 下次呼叫以還原後的 env 重建
+
+
+# ---- 錄影 / 對照實例:隱藏工單詳情頁 Jira MRQ 區(CMMS_UI_HIDE_JIRA)----
+
+def _hide_jira_settings(hide: bool):
+    """真 Settings(init 參數覆蓋 env);同示範站測試的 settings-swap 手法。"""
+    from cmms.config import Settings
+
+    return Settings(ui_hide_jira=hide)
+
+
+def test_work_order_detail_jira_section_shown_by_default(as_user, _detail_data, monkeypatch):
+    monkeypatch.setattr(web_routes, "get_settings", lambda: _hide_jira_settings(False))
+    r = client.get("/app/work-orders/90018")
+    assert r.status_code == 200
+    assert "Jira MRQ links" in r.text
+    assert "/app/work-orders/90018/forward" in r.text
+
+
+def test_work_order_detail_jira_section_hidden_when_flag_on(as_user, _detail_data, monkeypatch):
+    monkeypatch.setattr(web_routes, "get_settings", lambda: _hide_jira_settings(True))
+    r = client.get("/app/work-orders/90018")
+    assert r.status_code == 200
+    assert "Jira MRQ links" not in r.text
+    assert "/app/work-orders/90018/forward" not in r.text
+    assert 'name="external_key"' not in r.text

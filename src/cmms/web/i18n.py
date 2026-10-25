@@ -52,7 +52,7 @@ WTYPE_CSS: dict[str, str] = {
 # key → { locale → 字串 }。缺該 locale 時回退 en(見 translate)。
 CATALOG: dict[str, dict[str, str]] = {
     "en": {
-        "app.name": "Shopfloor CMMS",
+        "app.name": "Tendline Work",
         "nav.report": "Report",
         "nav.myorders": "My Orders",
         "nav.inventory": "Inventory",
@@ -75,7 +75,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "scope.empty": "Nothing assigned to you — switch to All to see everything.",
         "assistant": "Assistant",
         "assistant.soon": "Assistant — connect an agent (ADR-020).",
-        "assistant.placeholder": "Ask me about cmms…",
+        "assistant.placeholder": "Ask me about Tendline Work…",
         "assistant.send": "Send",
         "assistant.new": "New chat",
         "assistant.disabled": "Assistant isn't enabled yet.",
@@ -887,7 +887,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "settings.tg.section": "Telegram assistant",
         "settings.tg.hint": (
             "Link Telegram to chat with the assistant from your phone — "
-            "no cmms login needed once linked."
+            "no Tendline Work login needed once linked."
         ),
         "settings.tg.generate": "Generate link code",
         "settings.tg.code_intro": "Your one-time link code (shown once — copy it now):",
@@ -901,9 +901,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "settings.tg.unlink.confirm": "Unlink Telegram? You'll need a new code to link again.",
         # 續-15 Telegram bot 回覆訊息(locale-aware,除 teach 為固定雙語)
         "tg.reply.teach": (
-            "請先綁定才能使用助理:登入 cmms → 設定 → Telegram 助理 → 產生綁定碼,"
+            "請先綁定才能使用助理:登入 Tendline Work → 設定 → Telegram 助理 → 產生綁定碼,"
             "再回這裡傳 /start <綁定碼>(10 分鐘內有效)。\n\n"
-            "Link first to use the assistant: sign in to cmms → Settings → "
+            "Link first to use the assistant: sign in to Tendline Work → Settings → "
             "Telegram assistant → Generate link code, then send /start <code> here "
             "(valid 10 minutes)."
         ),
@@ -1091,7 +1091,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.feedback.err.send": "Send failed, please try again.",
     },
     "zh-TW": {
-        "app.name": "Shopfloor CMMS",
+        "app.name": "Tendline Work",
         "nav.report": "報修",
         "nav.myorders": "我的工單",
         "nav.inventory": "備品",
@@ -1115,7 +1115,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "scope.empty": "沒有指派給你的項目 —— 切「全部」查看所有。",
         "assistant": "助理",
         "assistant.soon": "助理 —— 待接上 agent(ADR-020)。",
-        "assistant.placeholder": "問我 cmms 的事…",
+        "assistant.placeholder": "問我 Tendline Work 的事…",
         "assistant.send": "送出",
         "assistant.new": "新對話",
         "assistant.disabled": "助理尚未啟用。",
@@ -1695,7 +1695,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.owners.err.noselect": "請先勾選至少一台設備。",
         "admin.notify.title": "通知",
         "admin.notify.intro": (
-            "工單開立 / 結案時通知的收件人(email + Telegram)。收件人不綁 cmms 帳號,"
+            "工單開立 / 結案時通知的收件人(email + Telegram)。收件人不綁 Tendline Work 帳號,"
             "無帳號的線管理者也能收。通知內文固定繁中(純資訊性)。"
         ),
         "admin.notify.smtp": "SMTP(email)",
@@ -1828,7 +1828,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "settings.pat.delete.confirm": "刪除你的 Jira 權杖?即刻失效。",
         # 續-15 Telegram 助理綁定(設定頁)
         "settings.tg.section": "Telegram 助理",
-        "settings.tg.hint": "綁定 Telegram,即可用手機直接問助理(綁定後免登入 cmms)。",
+        "settings.tg.hint": "綁定 Telegram,即可用手機直接問助理(綁定後免登入 Tendline Work)。",
         "settings.tg.generate": "產生綁定碼",
         "settings.tg.code_intro": "你的一次性綁定碼(只顯示這一次,請立即複製):",
         "settings.tg.teach": (
@@ -1841,9 +1841,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "settings.tg.unlink.confirm": "解除 Telegram 綁定?需要重新產生綁定碼才能再綁。",
         # 續-15 Telegram bot 回覆訊息(teach 為固定雙語,其餘依 ui_locale)
         "tg.reply.teach": (
-            "請先綁定才能使用助理:登入 cmms → 設定 → Telegram 助理 → 產生綁定碼,"
+            "請先綁定才能使用助理:登入 Tendline Work → 設定 → Telegram 助理 → 產生綁定碼,"
             "再回這裡傳 /start <綁定碼>(10 分鐘內有效)。\n\n"
-            "Link first to use the assistant: sign in to cmms → Settings → "
+            "Link first to use the assistant: sign in to Tendline Work → Settings → "
             "Telegram assistant → Generate link code, then send /start <code> here "
             "(valid 10 minutes)."
         ),
@@ -2018,7 +2018,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.feedback.err.send": "送出失敗,請再試。",
     },
     "vi": {
-        "app.name": "Shopfloor CMMS",
+        "app.name": "Tendline Work",
         "nav.report": "Báo sự cố",
         "nav.myorders": "Đơn của tôi",
         "nav.inventory": "Vật tư",
@@ -2041,7 +2041,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "scope.empty": "Không có mục nào giao cho bạn — chuyển sang Tất cả để xem tất cả.",
         "assistant": "Trợ lý",
         "assistant.soon": "Trợ lý — kết nối agent (ADR-020).",
-        "assistant.placeholder": "Hỏi tôi về cmms…",
+        "assistant.placeholder": "Hỏi tôi về Tendline Work…",
         "assistant.send": "Gửi",
         "assistant.new": "Trò chuyện mới",
         "assistant.disabled": "Trợ lý chưa được kích hoạt.",
@@ -2823,7 +2823,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "settings.tg.section": "Trợ lý Telegram",
         "settings.tg.hint": (
             "Liên kết Telegram để hỏi trợ lý ngay trên điện thoại "
-            "(sau khi liên kết không cần đăng nhập cmms)."
+            "(sau khi liên kết không cần đăng nhập Tendline Work)."
         ),
         "settings.tg.generate": "Tạo mã liên kết",
         "settings.tg.code_intro": (
@@ -2839,9 +2839,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "settings.tg.unlink.confirm": "Hủy liên kết Telegram? Bạn sẽ cần mã mới để liên kết lại.",
         # 續-15 Telegram bot 回覆訊息(teach 為固定雙語,其餘依 ui_locale)
         "tg.reply.teach": (
-            "請先綁定才能使用助理:登入 cmms → 設定 → Telegram 助理 → 產生綁定碼,"
+            "請先綁定才能使用助理:登入 Tendline Work → 設定 → Telegram 助理 → 產生綁定碼,"
             "再回這裡傳 /start <綁定碼>(10 分鐘內有效)。\n\n"
-            "Link first to use the assistant: sign in to cmms → Settings → "
+            "Link first to use the assistant: sign in to Tendline Work → Settings → "
             "Telegram assistant → Generate link code, then send /start <code> here "
             "(valid 10 minutes)."
         ),

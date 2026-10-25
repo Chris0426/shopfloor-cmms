@@ -26,7 +26,8 @@ HELP_DOCS: tuple[HelpDoc, ...] = (
         title="Telegram 助理:綁定與使用",
         summary=(
             "① 在 Telegram 搜尋 @shopfloor_cmms_bot,開啟後按「開始 / Start」。"
-            "② 登入 cmms 設定頁 →「Telegram 助理」→ 產生綁定碼(10 分鐘內有效、只顯示一次)。"
+            "② 登入 Tendline Work 設定頁 →「Telegram 助理」→ 產生綁定碼"
+            "(10 分鐘內有效、只顯示一次)。"
             "③ 回 Telegram 對 bot 傳 /start <綁定碼>(或直接按頁面「用 Telegram 開啟」)。"
             "綁定後可直接用中文問工單、設備、備品;你負責的機台一開單或結案也會主動通知你。"
         ),
@@ -35,13 +36,13 @@ HELP_DOCS: tuple[HelpDoc, ...] = (
     ),
     HelpDoc(
         slug="jira-pat",
-        title="Jira 權杖:讓 CMMS 用你的身分開 MRQ",
+        title="Jira 權杖:讓 Tendline Work 用你的身分開 MRQ",
         summary=(
             "① 開 jira.example.com,右上角頭像 → Profile → 左側 "
             "Personal Access Tokens → Create token。"
             "② 名稱填 cmms、有效期建議改成 365 天,按 Create。"
             "③ 複製那串只顯示一次的權杖(離開頁面就看不到了)。"
-            "④ 貼進 cmms 設定頁的「Jira 個人存取權杖」欄、按儲存。"
+            "④ 貼進 Tendline Work 設定頁的「Jira 個人存取權杖」欄、按儲存。"
             "之後在任一工單按「轉發到 MRQ」即以你本人身分開請購單。"
         ),
         template="help/jira-pat.zh-TW.html",

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     demo_mode: bool = Field(default=False)
     # 橫幅顯示的重置週期(分鐘);須與 scripts/demo_reset.sh 的 timer 一致。
     demo_reset_minutes: int = Field(default=30)
+    # 錄影 / 對照用實例:隱藏工單詳情頁的 Jira MRQ 連結整區(標題、說明、轉發、連結表單、
+    # 自動同步勾選)。預設關閉;env CMMS_UI_HIDE_JIRA=1 開啟。僅影響畫面,不動 domain / API。
+    ui_hide_jira: bool = Field(default=False)
 
     # 非同步 driver 連線字串(asyncpg);Fly 私網為 *.internal(ADR-013)
     database_url: str = Field(
