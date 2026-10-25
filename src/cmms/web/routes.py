@@ -107,6 +107,7 @@ from cmms.web.i18n import (
     wo_status_key,
     wtype_css,
 )
+from cmms.web.timefmt import local_date, local_dt
 
 _WEB_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
@@ -118,6 +119,9 @@ templates.env.globals["wtype_css"] = wtype_css
 templates.env.globals["render_reply"] = render_reply
 # 匯出預覽表格的顯示格式化(HTML;Jinja autoescape 處理跳脫,故無需 formula guard)。
 templates.env.globals["export_cell"] = display_cell
+# 時間顯示:DB 存 UTC instant → 畫面一律 Asia/Taipei(見 timefmt;日曆日不位移)。
+templates.env.filters["local_dt"] = local_dt
+templates.env.filters["local_date"] = local_date
 
 
 def _pm_due_by(due: date | None, today: date) -> bool:
@@ -516,6 +520,9 @@ async def work_order_detail(
         if atts_map.get(str(n.id))
     }
     parts = await svc.get_parts(work_order_no)  # 工單領料史(ui-mvp-spec §3)
+    # 領料時點 = 該次 ISSUE 帳 occurred_at(非 work_order_part.created_at 落庫時間);
+    # 配不上 → 模板退回 created_at
+    part_issued_at = await svc.get_part_issue_times(work_order_no) if parts else {}
     links = await svc.list_external_links(work_order_no)  # WO↔MRQ(ADR-020;落庫連結事實)
     # 是否已有待審的作廢請求(targeted 查詢;避免重複提案 + 顯示審核中)
     pending_void = (
@@ -547,8 +554,9 @@ async def work_order_detail(
     return _render(
         request, "work_order_detail.html", user.ui_locale, active="orders",
         user=user, wo=wo, notes=notes, photos_by_note=photos_by_note, assignees=assignees,
-        parts=parts, links=links, pending_void=pending_void, terminal=terminal,
-        voidable=voidable, hold_reasons=hold_reasons, efc_options=efc_options,
+        parts=parts, part_issued_at=part_issued_at, links=links,
+        pending_void=pending_void, terminal=terminal, voidable=voidable,
+        hold_reasons=hold_reasons, efc_options=efc_options,
         asset_desc=asset_desc,
         backfill_source_actor=BACKFILL_ACTOR.value,
         msg=msg, mrq=mrq, me=Actor.human(user.user_id).value, nonce=secrets.token_urlsafe(8),

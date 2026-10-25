@@ -120,7 +120,7 @@
     <span class="tl-dot tl-dot--{{ css }}"></span>
     <div class="tl-head">
       <span class="badge badge--{{ css }}">{{ t("notetype." ~ note.entry_type) }}</span>
-      <span class="tl-time">{{ note.occurred_at.strftime("%m/%d %H:%M") }}</span>
+      <span class="tl-time">{{ note.occurred_at|local_dt("%m/%d %H:%M") }}</span>
       <span class="author-chip {{ 'author-chip--agent' if is_agent else '' }}">
         {% if is_agent %}<svg style="width:10px;height:10px" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4 L13.6 10.4 L20 12 L13.6 13.6 L12 20 L10.4 13.6 L4 12 L10.4 10.4 Z"/></svg>{% endif %}
         {{ note.author.split(":")[-1] }}
@@ -258,7 +258,7 @@
       <tr>
         <td class="mono"><a href="/app/inventory/{{ p.item_code }}">{{ p.item_code }}</a></td>
         <td>×{{ "%g"|format(p.quantity|float) }}</td>
-        <td>{{ p.created_at.strftime("%m/%d") if p.created_at else "—" }}</td>
+        <td>{{ (part_issued_at.get(p.id) or p.created_at)|local_dt("%m/%d") }}</td>
         {% if not terminal %}
         <td style="white-space:nowrap;text-align:right;">
           {# 歷史回填領料(source_actor=data-migration)從未扣 on_hand → 取消/改量會 RETURN 反灌灌爆庫存,隱藏按鈕(domain 亦擋) #}

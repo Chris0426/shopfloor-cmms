@@ -34,7 +34,7 @@
     {% for e in events %}
     {% set o = e.o %}
     <tr>
-      <td class="mono" style="white-space:nowrap;">{{ e.when.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td class="mono" style="white-space:nowrap;">{{ e.when|local_dt }}</td>
       <td>
         {% set who = e.who or "" %}
         <span class="author-chip author-chip--{{ 'agent' if who.startswith('agent:') else 'human' }}">{{ who or "—" }}</span>

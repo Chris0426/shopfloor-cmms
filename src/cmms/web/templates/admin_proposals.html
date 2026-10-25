@@ -43,7 +43,7 @@
         </details>
       </td>
       <td class="mono">{{ p.proposed_by }}</td>
-      <td>{{ p.expires_at.strftime("%m-%d %H:%M") }}</td>
+      <td>{{ p.expires_at|local_dt("%m-%d %H:%M") }}</td>
       <td>
         <div class="adm-actions">
           <form method="post" action="/admin/proposals/{{ p.pending_token }}/confirm">
@@ -80,7 +80,7 @@
       <td style="max-width:420px;white-space:pre-wrap;">{{ f.message }}</td>
       <td>
         <span class="mono">{{ f.user_id }}</span>
-        <br><span class="form-hint">{{ f.created_at.strftime("%m-%d %H:%M") }}</span>
+        <br><span class="form-hint">{{ f.created_at|local_dt("%m-%d %H:%M") }}</span>
       </td>
       <td>
         <form method="post" action="/admin/feedback/{{ f.id }}/resolve">
@@ -105,7 +105,7 @@
         <td style="max-width:420px;white-space:pre-wrap;">{{ f.message }}</td>
         <td>
           <span class="mono">{{ f.user_id }}</span>
-          <br><span class="form-hint">{{ t("admin.feedback.by") }} {{ f.resolved_by }} · {{ f.resolved_at.strftime("%m-%d %H:%M") }}</span>
+          <br><span class="form-hint">{{ t("admin.feedback.by") }} {{ f.resolved_by }} · {{ f.resolved_at|local_dt("%m-%d %H:%M") }}</span>
         </td>
       </tr>
       {% endfor %}

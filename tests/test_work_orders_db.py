@@ -314,6 +314,30 @@ async def test_hold_requires_reason(session) -> None:
         await svc.hold_work(wo.work_order_no, "", ACTOR, at=_ts(11))
 
 
+async def test_part_issue_times_pair_with_issue_ledger(session) -> None:
+    """詳情頁領料欄日期 = 該次 ISSUE 帳 occurred_at;改量增量補扣帳不搶配對。"""
+    await load_wo(WO_ROWS, session)
+    svc = WorkOrderService(session)
+    wo = await svc.open_work_order(asset_id="EID-001", work_type="REACTIVE", actor=ACTOR, at=_ts(9))
+    no = wo.work_order_no
+    await svc.start_work(no, ACTOR, at=_ts(10))
+    await svc.issue_part_to_work_order(
+        work_order_no=no, item_code="ES001", quantity="1", actor=ACTOR,
+        idempotency_key="pt1", at=_ts(11),
+    )
+    first = (await svc.get_parts(no))[0]
+    await svc.update_part_issue_quantity(
+        work_order_no=no, part_id=first.id, new_quantity="2", actor=ACTOR, idempotency_key="pt2"
+    )  # 增量補扣 ISSUE(occurred_at=now)不對應新列
+    await svc.issue_part_to_work_order(
+        work_order_no=no, item_code="ES001", quantity="1", actor=ACTOR,
+        idempotency_key="pt3", at=_ts(13),
+    )
+    parts = await svc.get_parts(no)
+    times = await svc.get_part_issue_times(no)
+    assert [times[p.id] for p in parts] == [_ts(11), _ts(13)]
+
+
 async def test_issue_part_decrements_inventory_and_idempotent(session) -> None:
     await load_wo(WO_ROWS, session)
     svc = WorkOrderService(session)

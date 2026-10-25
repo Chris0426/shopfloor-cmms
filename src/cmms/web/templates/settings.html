@@ -56,7 +56,7 @@
   {% set c = pat_creds[0] %}
   <p class="form-hint">
     <span class="badge badge--done">{{ c.system }}</span>
-    {{ t("settings.pat.created") }} {{ c.created_at.date() }}{% if c.last_used_at %} · {{ t("settings.pat.lastused") }} {{ c.last_used_at.date() }}{% endif %}
+    {{ t("settings.pat.created") }} {{ c.created_at|local_date }}{% if c.last_used_at %} · {{ t("settings.pat.lastused") }} {{ c.last_used_at|local_date }}{% endif %}
   </p>
   <details class="fold" style="max-width:360px;margin:8px 0;">
     <summary>{{ t("settings.pat.replace") }}</summary>

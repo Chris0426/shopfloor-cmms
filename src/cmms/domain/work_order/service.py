@@ -34,7 +34,7 @@ from cmms.domain.identity.service import (
     is_active_admin,
     is_operator,
 )
-from cmms.domain.inventory.models import InventoryItem
+from cmms.domain.inventory.models import InventoryItem, StockTransaction
 from cmms.domain.inventory.service import InventoryError, InventoryService
 from cmms.domain.notify.service import enqueue_work_order_notifications
 from cmms.domain.pm_schedule.models import PmSchedule
@@ -89,6 +89,9 @@ HUMAN_PROPOSABLE_OPS = PROPOSABLE_OPS | frozenset({"void_work_order", "update_it
 # 憑空灌爆庫存。domain 以此標記顯式擋下(cancel/update_part_issue;inventory 直領同理),
 # 不再只靠「終態工單」推論(legacy 有 OPEN 單掛回填 part,終態守門不保證擋到)。
 BACKFILL_ACTOR = Actor.human("data-migration")
+# 改量「增量」補扣的 ISSUE 帳 reason(非一次獨立領料 → 不對應 work_order_part;
+# 見 pair_part_issue_times)
+AMEND_INCREASE_REASON = "amend issue qty (increase)"
 
 # update_item 提案 params 的欄位型別(propose 先驗、confirm 統一轉型;JSONB 只存原始字串/布林)
 _ITEM_STR_FIELDS = (
@@ -409,6 +412,33 @@ class WorkOrderService(DomainService):
             .order_by(WorkOrderPart.id)
         )
         return list((await self.session.scalars(stmt)).all())
+
+    async def get_part_issue_times(self, work_order_no: int) -> dict[int, datetime]:
+        """工單領料列 id → 該次領料的 `stock_transaction.occurred_at`(領料時點)。讀取,開放。
+
+        work_order_part 與其 ISSUE 帳無 FK,但兩條寫入路徑(`issue_part_to_work_order` /
+        `backfill_part_issue`)在同一交易內**先**記帳**後**建列、互鎖冪等,故同 (工單, 料號)
+        內「列 id 序」與「起始 ISSUE 帳 txn_id 序」一一對應(配對規則見 `pair_part_issue_times`)。
+        配不上的列不出現在結果 → 呼叫端退回 `created_at`。
+        """
+        parts = (
+            await self.session.scalars(
+                select(WorkOrderPart)  # 含軟刪列:取消的領料仍占著它那筆 ISSUE 帳的序位
+                .where(WorkOrderPart.work_order_no == work_order_no)
+                .order_by(WorkOrderPart.id)
+            )
+        ).all()
+        txns = (
+            await self.session.scalars(
+                select(StockTransaction)
+                .where(
+                    StockTransaction.work_order_no == work_order_no,
+                    StockTransaction.kind == "ISSUE",
+                )
+                .order_by(StockTransaction.txn_id)
+            )
+        ).all()
+        return pair_part_issue_times(parts, txns)
 
     async def list_notes(self, work_order_no: int) -> list[WorkOrderNote]:
         """工單工作日誌(§1.6),依 occurred_at 升冪 = 時間線順序。已軟刪(0022)排除。讀取,開放。"""
@@ -1775,7 +1805,7 @@ class WorkOrderService(DomainService):
                     )
                 posted = await inv.post_stock_transaction(
                     item_code=part.item_code, qty_delta=-delta, kind="ISSUE", actor=actor,
-                    work_order_no=work_order_no, reason="amend issue qty (increase)",
+                    work_order_no=work_order_no, reason=AMEND_INCREASE_REASON,
                     occurred_at=when, idempotency_key=idempotency_key,
                 )
             else:
@@ -2485,3 +2515,31 @@ class WorkOrderService(DomainService):
                 total += productive_minutes(start, end)
         wo.downtime_minutes = total
         wo.downtime_estimated = False  # 由系統時間戳精算
+
+
+def pair_part_issue_times(parts, txns) -> dict[int, datetime]:
+    """純函式:work_order_part 列 ↔ 起始 ISSUE 帳配對,回 {part.id: txn.occurred_at}。
+
+    `parts` / `txns` 皆屬同一工單。起始 ISSUE 帳 = 該工單 ISSUE 帳扣掉「改量增量補扣」
+    (`reason == AMEND_INCREASE_REASON` 且非回填 actor;那筆不建 work_order_part)。
+    同料號內依 id / txn_id 升冪逐一配對;**筆數不相等的料號整組不配**(不猜 —— 護欄 #7),
+    該料號的列由呼叫端退回 `created_at`。
+    """
+    by_item_parts: dict[str, list] = {}
+    for p in sorted(parts, key=lambda p: p.id):
+        by_item_parts.setdefault(p.item_code, []).append(p)
+    by_item_txns: dict[str, list] = {}
+    for t in sorted(txns, key=lambda t: t.txn_id):
+        if t.kind != "ISSUE":
+            continue
+        if t.reason == AMEND_INCREASE_REASON and t.source_actor != BACKFILL_ACTOR.value:
+            continue
+        by_item_txns.setdefault(t.item_code, []).append(t)
+    out: dict[int, datetime] = {}
+    for item, ps in by_item_parts.items():
+        ts = by_item_txns.get(item, [])
+        if len(ts) != len(ps):
+            continue
+        for p, t in zip(ps, ts, strict=True):
+            out[p.id] = t.occurred_at
+    return out

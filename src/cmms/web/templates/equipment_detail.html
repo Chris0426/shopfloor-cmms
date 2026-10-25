@@ -202,7 +202,7 @@
         {% else %}
         <td>×{{ "%g"|format(-txn.qty_delta|float) }}</td>
         {% endif %}
-        <td>{{ txn.occurred_at.date() }}</td>
+        <td>{{ txn.occurred_at|local_date }}</td>
         <td>
           {% if txn.work_order_no %}
           <a class="mono" href="/app/work-orders/{{ txn.work_order_no }}">WO-{{ txn.work_order_no }}</a>

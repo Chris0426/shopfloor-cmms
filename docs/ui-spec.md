@@ -22,6 +22,7 @@
 - **Navigation**: four bottom tabs — Report / My Work Orders / Parts / Maintenance.
 - **QR entry point**: scan an asset QR code (EID) → land directly on that asset's page (one-tap report / see its work orders / see its PMs). The phone browser camera is sufficient; no native app needed.
 - **Photos**: every photo capture or view goes through the `attachment` service (R2 + presigned URL).
+- **Times**: all instants are stored UTC and rendered in Asia/Taipei by the `local_dt` / `local_date` Jinja filters (`src/cmms/web/timefmt.py`); dates (not instants — `scheduled_date`, `next_due_date`, `opened_date`) are shown as stored. The JSON read API keeps returning UTC `Z`. A work order's Parts row shows when the part was issued (its `stock_transaction.occurred_at`), not when the row was inserted.
 
 ---
 

@@ -17,7 +17,7 @@
     <div class="tl-head">
       <span class="badge badge--{{ css }}">{{ t("myprop.status." ~ eff) }}</span>
       <span class="badge badge--{{ 'red' if p.operation == 'void_work_order' else 'prog' }}">{{ t("admin.prop.op." ~ p.operation) }}</span>
-      <span class="tl-time">{{ p.created_at.strftime("%m/%d %H:%M") }}</span>
+      <span class="tl-time">{{ p.created_at|local_dt("%m/%d %H:%M") }}</span>
     </div>
     <p class="tl-body">
       {# 提案目標連結(工單 / 品項),與 admin 審核頁一致 #}
@@ -39,11 +39,11 @@
     {% endif %}
     <p class="form-hint" style="margin:2px 0 0;">
       {% if eff == 'PENDING' %}
-      {{ t("myprop.expires") }} {{ p.expires_at.strftime("%m/%d %H:%M") }}
+      {{ t("myprop.expires") }} {{ p.expires_at|local_dt("%m/%d %H:%M") }}
       {% elif p.status in ('CONFIRMED', 'REJECTED') and p.confirmed_by %}
       {# confirmed_by = 裁決者(confirm=執行的 admin;reject=駁回者);model 無獨立駁回理由欄,不捏造 #}
       {{ t("myprop.reviewed_by") }} <span class="mono">{{ p.confirmed_by.split(":")[-1] }}</span>
-      {% if p.resolved_at %} · {{ p.resolved_at.strftime("%m/%d %H:%M") }}{% endif %}
+      {% if p.resolved_at %} · {{ p.resolved_at|local_dt("%m/%d %H:%M") }}{% endif %}
       {% endif %}
     </p>
   </li>

@@ -6,7 +6,7 @@ service 避開真 DB,只驗路由 / 模板 / 登入流 / 保護 / 時間線渲�
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -2737,7 +2737,11 @@ def test_wo_detail_shows_parts_links_and_actions(as_user, _detail_data, monkeypa
     async def _links(self, no):
         return [SimpleNamespace(id=1, external_key="MRQ-4220", link_type="referenced", title=None)]
 
+    async def _issue_times(self, no):
+        return {}  # 配不上 ISSUE 帳 → 模板退回 created_at
+
     monkeypatch.setattr(web_routes.WorkOrderService, "get_parts", _parts)
+    monkeypatch.setattr(web_routes.WorkOrderService, "get_part_issue_times", _issue_times)
     monkeypatch.setattr(web_routes.WorkOrderService, "list_external_links", _links)
     as_user["user"].ui_locale = "zh-TW"
     r = client.get("/app/work-orders/90018")
@@ -2750,6 +2754,43 @@ def test_wo_detail_shows_parts_links_and_actions(as_user, _detail_data, monkeypa
     assert "/app/work-orders/90018/assign" in r.text                          # 就地改派
     assert "/app/work-orders/90018/request-void" not in r.text                # #3c:按鈕移除
     assert 'data-suggest="part"' in r.text and 'data-suggest="person"' in r.text
+
+
+def test_wo_detail_work_log_renders_taipei_time(as_user, _detail_data, monkeypatch):
+    """DB 存 UTC instant;Work Log 以 Asia/Taipei 顯示(06:58Z → 14:58),格式不變 %m/%d %H:%M。"""
+    async def _list(self, no):
+        return [SimpleNamespace(id=9, entry_type="note", body="tz check", author="human:jlee",
+                                occurred_at=datetime(2026, 10, 1, 6, 58, 54, tzinfo=UTC),
+                                status_history_id=None, updated_at=None)]
+
+    monkeypatch.setattr(web_routes.WorkOrderService, "list_notes", _list)
+    r = client.get("/app/work-orders/90018")
+    assert r.status_code == 200
+    assert "10/01 14:58" in r.text
+    assert "10/01 06:58" not in r.text
+
+
+def test_wo_detail_parts_show_issue_time_not_insert_time(as_user, _detail_data, monkeypatch):
+    """領料欄日期 = ISSUE 帳 occurred_at(Taipei 當地日),配不上才退回 created_at。"""
+    async def _parts(self, no):
+        return [
+            SimpleNamespace(id=11, item_code="ES001", quantity=2, source_actor="human:jlee",
+                            created_at=datetime(2026, 10, 20, 3, 0, tzinfo=UTC)),
+            SimpleNamespace(id=12, item_code="ES002", quantity=1, source_actor="human:jlee",
+                            created_at=datetime(2026, 10, 21, 3, 0, tzinfo=UTC)),
+        ]
+
+    async def _issue_times(self, no):
+        # 16:30Z = 隔日 00:30 Taipei → 當地日 07/02(非 created_at 的 10/20)
+        return {11: datetime(2026, 7, 1, 16, 30, tzinfo=UTC)}
+
+    monkeypatch.setattr(web_routes.WorkOrderService, "get_parts", _parts)
+    monkeypatch.setattr(web_routes.WorkOrderService, "get_part_issue_times", _issue_times)
+    r = client.get("/app/work-orders/90018")
+    assert r.status_code == 200
+    assert "<td>07/02</td>" in r.text        # 11:領料時點(ISSUE 帳)
+    assert "<td>10/20</td>" not in r.text    # 11 不再顯示落庫時間
+    assert "<td>10/21</td>" in r.text        # 12:無配對帳 → 退回 created_at
 
 
 def test_wo_detail_state_chips_and_finish(as_user, _detail_data):
@@ -3130,6 +3171,16 @@ def test_admin_audit_feed_merges(as_user, _audit_data):
     assert "agent:hermes" in r.text and "human:jlee" in r.text
     # 逆時序:txn(16:00,最新)排在範本軟刪(12:00,最舊)之前
     assert r.text.index("ES900004") < r.text.index("Clean the head")
+
+
+def test_admin_audit_renders_taipei_time(as_user, _audit_data):
+    """Activity 時間欄以 Asia/Taipei 顯示:txn 2026-07-03 16:00Z → 2026-07-04 00:00(跨日)。"""
+    as_user["user"].role = "admin"
+    r = client.get("/admin/audit")
+    assert r.status_code == 200
+    assert "2026-07-04 00:00" in r.text
+    assert "2026-07-03 16:00" not in r.text
+    assert "2026-07-03 20:00" in r.text      # 範本軟刪 12:00Z
 
 
 def test_admin_audit_source_filter_and_actor(as_user, monkeypatch):
