@@ -215,7 +215,8 @@ collide. `SEED_DIR` is the host directory, mounted read-only at `/seed`. Add
 parsing) only for a ledger with non-default area keys; check it with
 `docker compose config | grep CMMS_SEED_AREA_MAP`.
 For a recording instance also add `CMMS_UI_HIDE_JIRA=1` to hide the Jira MRQ section on the
-work-order detail page (the product name is fixed to "Tendline Work"; there is no `CMMS_APP_NAME`).
+work-order detail page and `CMMS_UI_HIDE_ASSISTANT=1` to hide the assistant dock and its mobile
+button (the product name is fixed to "Tendline Work"; there is no `CMMS_APP_NAME`).
 
 ```bash
 docker compose build

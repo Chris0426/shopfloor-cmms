@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # 錄影 / 對照用實例:隱藏工單詳情頁的 Jira MRQ 連結整區(標題、說明、轉發、連結表單、
     # 自動同步勾選)。預設關閉;env CMMS_UI_HIDE_JIRA=1 開啟。僅影響畫面,不動 domain / API。
     ui_hide_jira: bool = Field(default=False)
+    # 錄影 / 對照用實例:整個隱藏助理 dock(桌面右欄)與手機 FAB。預設關閉;
+    # env CMMS_UI_HIDE_ASSISTANT=1 開啟。與 hermes_configured 無關(那個只決定 dock 內容是否可用)。
+    ui_hide_assistant: bool = Field(default=False)
 
     # 非同步 driver 連線字串(asyncpg);Fly 私網為 *.internal(ADR-013)
     database_url: str = Field(

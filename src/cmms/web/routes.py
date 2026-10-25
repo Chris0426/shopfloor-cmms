@@ -295,6 +295,8 @@ def _render(
         "demo_reset_minutes": settings.demo_reset_minutes,
         # 錄影 / 對照實例:工單詳情頁隱藏 Jira MRQ 區(CMMS_UI_HIDE_JIRA)。
         "ui_hide_jira": settings.ui_hide_jira,
+        # 錄影 / 對照實例:整個不渲染助理 dock + FAB(CMMS_UI_HIDE_ASSISTANT)。
+        "ui_hide_assistant": settings.ui_hide_assistant,
         **extra,
     }
     return templates.TemplateResponse(request, name, ctx)

@@ -4105,6 +4105,7 @@ def _hermes_settings(url="http://gw.internal:8080", secret="HSECRET-XYZ"):
         demo_mode=False,
         demo_reset_minutes=30,
         ui_hide_jira=False,
+        ui_hide_assistant=False,
     )
 
 
@@ -4845,3 +4846,28 @@ def test_work_order_detail_jira_section_hidden_when_flag_on(as_user, _detail_dat
     assert "Jira MRQ links" not in r.text
     assert "/app/work-orders/90018/forward" not in r.text
     assert 'name="external_key"' not in r.text
+
+
+# ---- 錄影 / 對照實例:隱藏助理 dock + FAB(CMMS_UI_HIDE_ASSISTANT)----
+
+def _hide_assistant_settings(hide: bool):
+    """真 Settings(init 參數覆蓋 env);同示範站測試的 settings-swap 手法。"""
+    from cmms.config import Settings
+
+    return Settings(ui_hide_assistant=hide)
+
+
+def test_assistant_dock_shown_by_default(as_user, _queue_data, monkeypatch):
+    monkeypatch.setattr(web_routes, "get_settings", lambda: _hide_assistant_settings(False))
+    r = client.get("/app/work-orders")
+    assert r.status_code == 200
+    assert 'id="assistant-dock"' in r.text
+    assert "data-assistant-toggle" in r.text
+
+
+def test_assistant_dock_hidden_when_flag_on(as_user, _queue_data, monkeypatch):
+    monkeypatch.setattr(web_routes, "get_settings", lambda: _hide_assistant_settings(True))
+    r = client.get("/app/work-orders")
+    assert r.status_code == 200
+    assert 'id="assistant-dock"' not in r.text
+    assert "data-assistant-toggle" not in r.text

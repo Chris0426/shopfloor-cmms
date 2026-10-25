@@ -104,10 +104,12 @@
 
       {% block content %}{% endblock %}
 
+      {% if not ui_hide_assistant %}{# CMMS_UI_HIDE_ASSISTANT=1(錄影 / 對照實例)→ 無 FAB #}
       <button class="fab" type="button" aria-label="{{ t('assistant') }}" data-assistant-toggle>
         <svg class="icon-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4 L13.6 10.4 L20 12 L13.6 13.6 L12 20 L10.4 13.6 L4 12 L10.4 10.4 Z"/></svg>
         {{ t("assistant") }}
       </button>
+      {% endif %}
 
       <nav class="bottomnav" aria-label="primary">
         <a href="/app/report" class="{{ 'is-active' if active == 'report' else '' }}">
@@ -134,6 +136,7 @@
       </nav>
     </div>
 
+    {% if not ui_hide_assistant %}{# CMMS_UI_HIDE_ASSISTANT=1 → 無 dock;.shell 為 flex、.app flex:1 自動補滿 #}
     <!-- 桌面右側 agent dock / 手機底部 sheet(FAB 開啟);agent 可抽換 = Hermes,ADR-020 -->
     <!-- 對話落 DB(assistant 切片):dock 內容 lazy-load,整頁導覽後自動還原當前對話 -->
     <aside class="dock" id="assistant-dock" aria-label="assistant">
@@ -158,6 +161,7 @@
       <div class="dock__input dock__input--off">{{ t("assistant.placeholder") }}</div>
       {% endif %}
     </aside>
+    {% endif %}
 
   </div>
 </body>

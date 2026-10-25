@@ -38,6 +38,8 @@ services:
       CMMS_DEMO_MODE: "0"
       # 錄影實例在 .env 設 CMMS_UI_HIDE_JIRA=1:工單詳情頁不顯示 Jira MRQ 區(預設 0 = 顯示)。
       CMMS_UI_HIDE_JIRA: ${CMMS_UI_HIDE_JIRA:-0}
+      # 錄影實例設 CMMS_UI_HIDE_ASSISTANT=1:不顯示助理 dock / FAB(預設 0 = 顯示)。
+      CMMS_UI_HIDE_ASSISTANT: ${CMMS_UI_HIDE_ASSISTANT:-0}
   seed:
     image: shopfloor-cmms:seed
     environment:
