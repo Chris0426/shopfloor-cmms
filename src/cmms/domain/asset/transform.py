@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# 產線受控值(01-assets §1.2)。大小寫不一(Zone C / Zone c)在此收斂。
+# 產線受控值(01-assets §1.2)。大小寫不一(Zone C / zone c)在此收斂。
 CANONICAL_LINES: tuple[str, ...] = (
     "Zone A",
     "Zone B",
@@ -21,17 +21,14 @@ CANONICAL_LINES: tuple[str, ...] = (
     "Warehouse",
 )
 _LINE_BY_LOWER = {v.lower(): v for v in CANONICAL_LINES}
-# legacy 別名:舊 eMaint CSV 寫 "ZA-legacy" 是遷就其字母排序的 workaround();
-# 重灌 assets.csv 時自動收斂到 Zone A(migration 0033 已更名既有資料)。
-_LINE_BY_LOWER["za-legacy"] = "Zone A"
 
 
 def line_sort_key(code: str) -> tuple[int, int, str]:
     """產線 code 的自然排序鍵:數字開頭者依 (數值, 其餘字串) 排、非數字開頭排在其後按字串排。
 
-    為什麼不能直接用字串排序:純字串比較下 '1' < '1' 但 'Zone B' 的第二字元 '0' < 'Zone A' 的 'K'
-    (ASCII '0'=48 < 'K'=75),會把 "Zone B" 排在 "Zone A" 之前。取 leading digits 轉整數比較,
-    即可得 "Zone A" < "Zone B" < "Zone D" < "Zone C" 的直覺順序。大小寫不敏感(rest/字串鍵用 lower)。
+    為什麼不能直接用字串排序:純字串比較下 "10A" 的首字元 '1' < "2A" 的 '2',
+    會把 "10A" 排在 "2A" 之前。取 leading digits 轉整數比較,
+    即可得 "2A" < "10A" < "Zone A" 的直覺順序。大小寫不敏感(rest/字串鍵用 lower)。
     """
     digits = ""
     for ch in code:

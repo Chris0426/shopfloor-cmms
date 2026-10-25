@@ -29,6 +29,9 @@ Throwaway credentials for a throwaway database. Reset any time with:
 docker compose down -v && docker compose up
 ```
 
+Databases created from this repo before 2026-10-25 must be rebuilt with
+`docker compose down -v && docker compose up`, because migration 0033's revision id changed.
+
 ## The five-minute tour
 
 ### 1. File a breakdown (mobile)

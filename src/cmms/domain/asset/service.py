@@ -289,7 +289,7 @@ class AssetService(DomainService):
         )
 
     async def list_lines(self) -> list[Line]:
-        # 自然排序(Zone A < Zone B < Zone D < Zone C):SQL 字串排序會把 Zone B 排在 Zone A 前,
+        # 自然排序(2A < 10A < Zone A):SQL 字串排序會把 10A 排在 2A 前,
         # 故取全部後於 Python 用 line_sort_key 排(見 transform.line_sort_key docstring)。
         lines = list((await self.session.scalars(select(Line))).all())
         return sorted(lines, key=lambda line: line_sort_key(line.code))

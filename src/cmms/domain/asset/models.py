@@ -44,7 +44,7 @@ class Department(_CodeLabel, Base):
 
 
 class Line(_CodeLabel, Base):
-    __tablename__ = "line"  # Zone A/Zone B/Zone C/... 正規化後消除大小寫(0033:ZA-legacy 更名 Zone A)
+    __tablename__ = "line"  # Zone A/Zone B/... 正規化後消除大小寫
 
 
 class ExternalIdNamespace(_CodeLabel, Base):

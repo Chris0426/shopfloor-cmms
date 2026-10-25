@@ -27,13 +27,10 @@ def test_parse_yes_no() -> None:
 
 
 def test_normalize_line_canonical_casing() -> None:
-    # 資料品質問題 §5.1:Zone C / Zone c 必須收斂成同一值
+    # 資料品質問題 §5.1:大小寫不一的同一產線必須收斂成同一值
     assert normalize_line("Zone C") == "Zone C"
     assert normalize_line("Zone c") == "Zone C"
     assert normalize_line("  zone c ") == "Zone C"
-    # ZA-legacy 更名為 Zone A;legacy 別名 "za-legacy" 亦收斂到 Zone A(舊 eMaint 排序 workaround)
-    assert normalize_line("ZA-legacy") == "Zone A"
-    assert normalize_line("za-legacy") == "Zone A"
 
 
 def test_normalize_line_unknown_and_empty() -> None:
@@ -50,7 +47,7 @@ def test_row_to_import_maps_csv_columns() -> None:
         "assetsubtp": "AP CLEANER",
         "available": "No",
         "department": "EQ",
-        "line_no": "ZA-legacy",  # 舊 CSV 值,normalize 後應收斂為 Zone A
+        "line_no": "zone a",  # 大小寫不一的 CSV 值,normalize 後應收斂為 Zone A
         "model_no": "AP-500E",
         "serial_no": "SN480912",
     }
@@ -64,12 +61,13 @@ def test_row_to_import_maps_csv_columns() -> None:
 
 
 def test_line_sort_key_natural_order() -> None:
-    # 自然排序:Zone A < Zone B < Zone D < Zone C(純字串排序會把 Zone B 排在 Zone A 前)
-    assert sorted(["Zone C", "Zone B", "Zone D", "Zone A"], key=line_sort_key) == [
+    # 自然排序:2A < 10A < Zone A < Zone C < Zone D(純字串排序會把 10A 排在 2A 前)
+    assert sorted(["Zone C", "10A", "Zone D", "2A", "Zone A"], key=line_sort_key) == [
+        "2A",
+        "10A",
         "Zone A",
-        "Zone B",
-        "Zone D",
         "Zone C",
+        "Zone D",
     ]
 
 

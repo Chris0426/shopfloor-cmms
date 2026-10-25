@@ -85,7 +85,7 @@ async def test_load_is_idempotent_and_normalizes(session) -> None:
     r1 = await load(ROWS, session)
     assert r1.assets == 3
     assert r1.departments == 2  # EQ, QA
-    assert r1.lines == 2  # Zone C, IQC(兩個 Zone C* 收斂成一)
+    assert r1.lines == 2  # Zone C, IQC(兩個 Zone C 大小寫變體收斂成一)
 
     # 再跑一次不應重複
     r2 = await load(ROWS, session)

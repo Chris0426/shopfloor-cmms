@@ -41,6 +41,8 @@ real plant — and none ever will. The figures under
 [Scale it handles](#scale-it-handles) describe the migration and the production deployment; they
 are not data included here. See [About this copy](#about-this-copy).
 
+If your demo database was created before 2026-10-25, rebuild it with `docker compose down -v && docker compose up` — migration 0033's revision id changed.
+
 ---
 
 ## The governance model
