@@ -41,6 +41,10 @@ class WorkOrderRead(BaseModel):
     hold_reason: str | None
     downtime_minutes: int | None
     downtime_estimated: bool
+    # 0036 additive(2026-10-25,tendline.seed.v1.1 契約命名):機台實際停機時刻(嚴格早於
+    # opened_at)/ 維修後恢復生產時刻(僅 REACTIVE)。null = 未知(歷史單與未回報者皆 null)。
+    failure_started_at: datetime | None = None
+    production_resumed_at: datetime | None = None
 
 
 class WorkOrderStatusHistoryRead(BaseModel):
@@ -112,6 +116,9 @@ class WorkOrderActiveWindowRead(BaseModel):
     closed_at: datetime | None
     status: str
     hold_reason: str | None
+    # 0036 additive(同 WorkOrderRead;schema_id 仍 v1,消費端勿白名單拒未知鍵)
+    failure_started_at: datetime | None = None
+    production_resumed_at: datetime | None = None
     status_history: list[WorkOrderStatusHistoryRead]
 
 

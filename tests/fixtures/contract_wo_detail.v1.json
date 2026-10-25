@@ -22,6 +22,8 @@
   "hold_reason": "WAITING_MACHINE_TIME",
   "downtime_minutes": 452,
   "downtime_estimated": false,
+  "failure_started_at": null,
+  "production_resumed_at": null,
   "status_history": [
     {
       "from_status": null,

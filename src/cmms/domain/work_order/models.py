@@ -125,6 +125,14 @@ class WorkOrder(AuditMixin, Base):
     hold_reason: Mapped[str | None] = mapped_column(
         ForeignKey("wo_hold_reason.code"), nullable=True
     )  # 僅 status=ON_HOLD 時有值
+    # 0036(2026-10-25,tendline.seed.v1.1 契約命名):機台實際停機時刻(嚴格早於 opened_at)/
+    # 維修後恢復生產時刻(僅 REACTIVE、晚於開始處理)。皆可空 = 未知,不推算、不回填。
+    failure_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    production_resumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # #4b-2 on-box(ADR-017 Profile B):Analytics 簽章開立的 reactive 報修 WO
     origin_station: Mapped[str | None] = mapped_column(String, nullable=True)  # 站別歸屬(非 Person)

@@ -141,6 +141,8 @@ Read in this order:
   agents: model routing, stop-work signals, quality gates, and a catalogue of the failure modes
   that cost the most time.
 - **[DEMO.md](docs/DEMO.md)** — bring it up locally and click the interesting parts.
+- **[SYNTHETIC-INSTANCE.md](docs/SYNTHETIC-INSTANCE.md)** — replay a synthetic event ledger into a
+  fresh instance with `cmms seed-events`.
 
 ## How it was built
 

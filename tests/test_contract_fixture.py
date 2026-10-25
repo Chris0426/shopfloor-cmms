@@ -60,6 +60,9 @@ def _sample_detail() -> WorkOrderDetail:
         hold_reason="WAITING_MACHINE_TIME",  # 0019 受控值(等機台空檔)
         downtime_minutes=452,
         downtime_estimated=False,
+        # 0036 additive(2026-10-25):新欄以 null 鎖形(歷史/未回報 = null;非 null 形 = UTC Z)
+        failure_started_at=None,
+        production_resumed_at=None,
         status_history=[
             WorkOrderStatusHistoryRead(
                 from_status=None,

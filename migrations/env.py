@@ -29,6 +29,7 @@ from cmms.domain.inventory import models as _inventory_models  # noqa: E402, F40
 from cmms.domain.notify import models as _notify_models  # noqa: E402, F401
 from cmms.domain.pm_schedule import models as _pm_schedule_models  # noqa: E402, F401
 from cmms.domain.procurement import models as _procurement_models  # noqa: E402, F401
+from cmms.domain.seed import models as _seed_models  # noqa: E402, F401
 from cmms.domain.task import models as _task_models  # noqa: E402, F401
 from cmms.domain.telegram_bridge import models as _telegram_bridge_models  # noqa: E402, F401
 from cmms.domain.work_order import models as _work_order_models  # noqa: E402, F401

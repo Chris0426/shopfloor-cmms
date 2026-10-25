@@ -72,6 +72,10 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "VOIDED": set(),
 }
 TERMINAL_STATUSES = {"CLOSED", "CANCELLED", "VOIDED"}
+# set_seed_field 白名單(種子重播專用;其他欄各有 governed setter)
+SEED_FIELDS = frozenset(
+    {"diagnosis", "action_taken", "production_resumed_at", "scheduled_date", "downtime_estimated"}
+)
 
 # ADR-016 兩階段可提案的操作(Profile A;低/中風險,不放寬高風險如 void/Key Change)。
 PROPOSABLE_OPS = frozenset({"open_work_order", "close_work_order"})
@@ -798,8 +802,11 @@ class WorkOrderService(DomainService):
         assignees: list[str] | None = None,
         work_order_no: int | None = None,
         at: datetime | None = None,
+        failure_started_at: datetime | None = None,
     ) -> WorkOrder:
         """開立工單(狀態 OPEN)。`at` 預設系統當下(系統自動抓時間;測試/回填可注入)。
+
+        `failure_started_at`(0036,選填)= 機台實際停機時刻;必須嚴格早於開單時刻,否則拒。
 
         `assignees`(0031 多負責人)優先於單值 `assigned_person`(相容;若只給後者則等同單元素
         清單)。兩者皆空且 REACTIVE → 衍生自設備負責人(asset_owner)。
@@ -819,6 +826,7 @@ class WorkOrderService(DomainService):
                 assignees=assignees,
                 work_order_no=work_order_no,
                 at=at,
+                failure_started_at=failure_started_at,
             )
         return wo
 
@@ -837,6 +845,7 @@ class WorkOrderService(DomainService):
         origin_station: str | None = None,
         idempotency_key: str | None = None,
         evidence_ref: str | None = None,
+        failure_started_at: datetime | None = None,
     ) -> WorkOrder:
         """開立工單核心(無自有交易;由 open_work_order / confirm / on-box 各自 write() 內呼叫)。
 
@@ -850,6 +859,9 @@ class WorkOrderService(DomainService):
         寫入 work_order_assignee(position 0..n-1)+ 相容欄 `assigned_person`=首位。
         """
         when = at or self._now()
+        if failure_started_at is not None and not failure_started_at < when:
+            # 0036 語意:先停機、後報修 → 必須嚴格早於 opened_at(相等亦拒)
+            raise WorkOrderError("failure_started_at must be strictly before opened_at")
         # 名單優先序:assignees(list)> assigned_person(單值)> (REACTIVE)設備負責人
         if assignees is not None:
             names = _clean_names(assignees)
@@ -877,6 +889,7 @@ class WorkOrderService(DomainService):
             brief_description=brief_description,
             opened_date=to_taipei_naive(when).date(),
             opened_at=when,
+            failure_started_at=failure_started_at,
             opened_by=opened_by,
             assigned_person=names[0] if names else None,  # denormalized 首位(分析平台相容)
             origin_station=origin_station,
@@ -1300,6 +1313,68 @@ class WorkOrderService(DomainService):
             return wo  # 冪等 no-op(含清除已為空)
         async with self.write(actor):
             wo.confirmed_reason_code = reason
+            wo.updated_by = actor.value
+            wo.source_actor = actor.value
+        return wo
+
+    async def set_seed_field(
+        self,
+        work_order_no: int,
+        field: str,
+        value: object,
+        *,
+        actor: Actor,
+        at: datetime | None = None,
+    ) -> WorkOrder:
+        """種子重播(`cmms seed-events`)專用的單欄設定;白名單 `SEED_FIELDS` 外一律拒。
+
+        這幾欄原本沒有獨立 governed setter(diagnosis / action_taken 只在完工/結案順帶記),
+        種子帳把它們當獨立事件送來 → 走這一個受限入口,而非裸 UPDATE(護欄 #1)。規則比照兄弟
+        setter:operator 拒;終態工單限 admin(終態凍結);內容未變 → no-op(不污染稽核)。
+        - `diagnosis` / `action_taken`:非空字串(strip)。
+        - `production_resumed_at`:tz-aware datetime;**僅 REACTIVE**;必須晚於工單開始處理的
+          時刻(首筆 IN_PROGRESS 的 changed_at,無則 opened_at)。
+        - `scheduled_date`:date。`downtime_estimated`:bool。
+        `at` = 事件發生時刻(呼叫端對齊用;稽核時間由 AuditMixin 自填,不覆寫)。
+        """
+        await self._assert_not_operator(actor, "set_seed_field")
+        if field not in SEED_FIELDS:
+            raise WorkOrderError(f"field {field!r} is not settable via set_seed_field")
+        wo = await self.session.get(WorkOrder, work_order_no)
+        if wo is None:
+            raise WorkOrderError(f"work order {work_order_no} not found")
+        if wo.status in TERMINAL_STATUSES and not await is_active_admin(self.session, actor):
+            raise WorkOrderError(
+                f"wo {work_order_no} is terminal ({wo.status}); {field} is frozen (admin only)"
+            )
+        if field in ("diagnosis", "action_taken"):
+            if not isinstance(value, str) or not value.strip():
+                raise WorkOrderError(f"{field} must be a non-empty string")
+            value = value.strip()
+        elif field == "production_resumed_at":
+            if not isinstance(value, datetime) or value.tzinfo is None:
+                raise WorkOrderError("production_resumed_at must be a tz-aware datetime")
+            if wo.work_type != "REACTIVE":
+                raise WorkOrderError(
+                    f"wo {work_order_no}: production_resumed_at only applies to REACTIVE"
+                )
+            history = await self.get_status_history(work_order_no)
+            start = next(
+                (h.changed_at for h in history if h.to_status == "IN_PROGRESS"), wo.opened_at
+            )
+            if start is not None and not value > start:
+                raise WorkOrderError(
+                    f"wo {work_order_no}: production_resumed_at must be after work started"
+                )
+        elif field == "scheduled_date":
+            if not isinstance(value, date) or isinstance(value, datetime):
+                raise WorkOrderError("scheduled_date must be a date")
+        elif field == "downtime_estimated" and not isinstance(value, bool):
+            raise WorkOrderError("downtime_estimated must be a bool")
+        if getattr(wo, field) == value:
+            return wo
+        async with self.write(actor):
+            setattr(wo, field, value)
             wo.updated_by = actor.value
             wo.source_actor = actor.value
         return wo

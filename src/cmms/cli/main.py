@@ -868,5 +868,93 @@ def efc_workorder_crosscheck_cmd(
     typer.echo(f"→ {len(seed['codes'])} codes; {skipped} rows skipped; wrote {out}")
 
 
+
+@app.command("seed-events")
+def seed_events(
+    seed_dir: Path = typer.Argument(
+        ..., exists=True, file_okay=False, help="種子帳目錄(seed-manifest.json + seed-*.jsonl)"
+    ),
+    until: str = typer.Option(
+        None, "--until", help="cut-off(ISO-8601;naive=Asia/Taipei,Z/offset 照用;省略=now)"
+    ),
+    expect_world: str = typer.Option(None, "--expect-world", help="預期 world_id(不符即拒讀)"),
+    area_map: str = typer.Option(
+        None, "--area-map", help='area→line JSON(覆寫預設;亦可設 env CMMS_SEED_AREA_MAP)'
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="只解析 + 驗證 + 預檢,不連 DB、不寫入"),
+) -> None:
+    """重播 tendline.seed.v1.1 種子帳(經既有 domain service;見 docs/SYNTHETIC-INSTANCE.md)。
+
+    成功:stdout 一行 JSON 摘要,exit 0。拒讀:stderr 一行 {"rejected","detail"},exit 2。
+    行級錯誤以 WARNING 記 log(stderr),不中斷。
+    """
+    import json
+    import os
+
+    from cmms.domain.seed.reader import (
+        SeedRejected,
+        parse_manifest,
+        read_ledger,
+        verify_day_files,
+    )
+    from cmms.domain.seed.service import (
+        build_summary,
+        log_line_error,
+        reader_errors_in_scope,
+    )
+    from cmms.domain.seed.transform import (
+        SeedConfigError,
+        parse_until,
+        resolve_area_map,
+        simulate,
+    )
+
+    def _dump(obj: dict) -> str:
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    def _reject(code: str, detail: str) -> None:
+        typer.echo(_dump({"rejected": code, "detail": detail}), err=True)
+        raise typer.Exit(2)
+
+    try:
+        until_dt = parse_until(until)
+        amap = resolve_area_map(area_map, os.environ.get("CMMS_SEED_AREA_MAP"))
+        manifest_path = seed_dir / "seed-manifest.json"
+        if not manifest_path.is_file():
+            raise SeedRejected("manifest", f"{manifest_path} not found")
+        manifest = parse_manifest(manifest_path.read_bytes(), expect_world=expect_world)
+        names = {d.file for d in manifest.days} | {p.name for p in seed_dir.glob("seed-*.jsonl")}
+        files = {n: (seed_dir / n).read_bytes() for n in names if (seed_dir / n).is_file()}
+        verify_day_files(manifest, files)
+        read = read_ledger(manifest, files)
+    except (SeedRejected, SeedConfigError) as e:
+        _reject(e.code, e.detail)
+
+    if dry_run:
+        # 無 DB:視為全新 instance(從 seq 1 起);預檢規則與實跑共用 Replayer
+        tally = simulate(read.events, area_map=amap, after_seq=0, until=until_dt)
+        for rec in reader_errors_in_scope(read, 0):
+            tally.error(rec["code"], rec["seq"], rec["line"], rec["detail"])
+        for rec in tally.records:
+            log_line_error(rec)
+        typer.echo(_dump(build_summary(manifest, until_dt, 1, tally)))
+        return
+
+    from cmms.db import get_sessionmaker
+    from cmms.domain.seed.service import SeedReplayService
+
+    async def _run() -> dict:
+        async with get_sessionmaker()() as session:
+            outcome = await SeedReplayService(session, area_map=amap).replay(
+                manifest, read, until=until_dt
+            )
+        return outcome.summary()
+
+    try:
+        summary = asyncio.run(_run())
+    except SeedRejected as e:
+        _reject(e.code, e.detail)
+    typer.echo(_dump(summary))
+
 if __name__ == "__main__":
     app()

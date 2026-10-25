@@ -154,6 +154,8 @@ async def list_active_in_window(
             closed_at=wo.closed_at,
             status=wo.status,
             hold_reason=wo.hold_reason,
+            failure_started_at=wo.failure_started_at,
+            production_resumed_at=wo.production_resumed_at,
             status_history=_history_reads(
                 wo.work_type, history, status_is_downtime, hold_is_downtime
             ),

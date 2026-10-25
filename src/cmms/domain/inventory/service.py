@@ -641,10 +641,12 @@ class InventoryService(DomainService):
         reason: str,
         actor: Actor,
         idempotency_key: str | None = None,
+        occurred_at: datetime | None = None,
     ) -> bool:
         """盤點調整在庫量(governed):記一筆 ADJUST 帳並連動 on_hand(不裸 UPDATE,ADR-005)。
 
         以「新數量」表意(差額由此算),必附 reason、不得為負(review f14cf8d)。
+        `occurred_at` 選填(預設 now;種子重播帶事件時刻,讓帳序與事件序一致)。
         回 True=已調;False=數量未變/冪等命中。
         """
         if not reason or not reason.strip():
@@ -668,6 +670,7 @@ class InventoryService(DomainService):
                 kind="ADJUST",
                 actor=actor,
                 reason=reason.strip(),
+                occurred_at=occurred_at,
                 idempotency_key=idempotency_key,
             )
         return posted

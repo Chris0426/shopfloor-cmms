@@ -43,6 +43,8 @@ def _sample_response() -> WorkOrderActiveInResponse:
                 closed_at=datetime(2026, 7, 2, 16, 50, 0, tzinfo=UTC),
                 status="CLOSED",
                 hold_reason="WAITING_MACHINE_TIME",
+                failure_started_at=None,  # 0036 additive(null 鎖形)
+                production_resumed_at=None,
                 status_history=[
                     WorkOrderStatusHistoryRead(
                         from_status=None,
@@ -78,6 +80,8 @@ def _sample_response() -> WorkOrderActiveInResponse:
                 closed_at=None,
                 status="OPEN",
                 hold_reason=None,
+                failure_started_at=None,  # 0036 additive(null 鎖形)
+                production_resumed_at=None,
                 status_history=[],
             ),
         ],

@@ -71,6 +71,8 @@ Data shape: a decade of history. **WO volume is highly skewed** — the median m
 | `work_complete_time` | [CSV] `time_cmpl` | time | ⬜ | **⚠ Same 12-hour ambiguity** |
 | `closed_date` | [CSV] `editdate` | date | ⬜ | Close date. ⚠ This is *not* "last modified" — it is the **close sign-off date** (only populated when status=H) |
 | `closed_time` | [CSV] `edittime` | time | ⬜ | Close time (24-hour, reliable) |
+| `failure_started_at` | [seed] `wo.open.failure_started_at` | timestamptz | ⬜ | **When the machine actually stopped** (migration 0036, 2026-10-25). Must be **strictly before** `opened_at` (the stop comes before the report); `null` = unknown — never inferred, never backfilled onto historical work orders. Set only at open (`open_work_order(failure_started_at=…)`, which rejects a value not strictly earlier). Named after the `tendline.seed.v1.1` contract so a later publish of the private tree merges back without renaming. Exposed additively in `contract_wo_detail.v1` and `contract_wo_active_in.v1`. |
+| `production_resumed_at` | [seed] `wo.field` | timestamptz | ⬜ | **When production resumed after the repair** (migration 0036). **REACTIVE only**; must be **after work started** (the first `IN_PROGRESS` transition, else `opened_at`); `null` = not reported. Written through `set_seed_field` (the seed-replay whitelist setter: operator rejected, terminal work orders admin-only). Same contract naming and exposure as `failure_started_at`. |
 | `closed_by` | [CSV] `edituser` | string→FK | ⬜ | Who closed it — a legacy eMaint login name, from a small set of accounts. Loaded as text; the FK→user is deferred |
 | `downtime` | [UI] | duration | ⬜ | **Equipment downtime — the system settles this value, but it is not in the export and must be extracted** (see §5.2) |
 | `labor_hours` | [UI] | decimal | ⬜ | Actual labour hours; not exported |
@@ -307,6 +309,8 @@ vendor(code, label)           -- CMA / CMB / SF (from 0003; 0004 adds SF). A con
 wo_status(code, label, rank, is_terminal, is_downtime)   -- the canonical 7 states (OPEN/IN_PROGRESS/ON_HOLD/COMPLETED/CLOSED/CANCELLED/VOIDED)
 wo_hold_reason(code, label, is_downtime)  -- TEST_RUN(F)/WAITING_PARTS(T)/WAITING_VENDOR(T)/WAITING_MACHINE_TIME(F; 0019)/OTHER(T)
 work_order += opened_at, closed_at (timestamptz), downtime_estimated (bool), hold_reason (FK)
+work_order += failure_started_at, production_resumed_at (timestamptz, nullable; ★ 0036, 2026-10-25 — see §1.4;
+              --   named per the tendline.seed.v1.1 contract consumed by `cmms seed-events`, docs/SYNTHETIC-INSTANCE.md)
 work_order_status_history(id, work_order_no, from_status, to_status, hold_reason, changed_at, +audit)  -- transitions = the source of downtime
   -- ★ 2026-07-12: the read contracts (detail / active-in) additionally expose is_downtime per segment as a computed
   --   field (not a DB column, zero migration); decided by downtime.py::segment_is_downtime (work_type-aware:

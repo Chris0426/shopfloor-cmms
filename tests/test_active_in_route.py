@@ -87,6 +87,8 @@ def test_active_in_envelope_and_z_serialization(_fake_session, monkeypatch):
         opened_at=datetime(2026, 7, 1, 9, 12, 0, tzinfo=UTC),
         closed_at=datetime(2026, 7, 2, 16, 50, 0, tzinfo=UTC),
         status="CLOSED", hold_reason="WAITING_MACHINE_TIME",
+        failure_started_at=datetime(2026, 7, 1, 9, 0, 0, tzinfo=UTC),  # 0036 additive
+        production_resumed_at=None,
     )
     hist = [
         SimpleNamespace(from_status=None, to_status="OPEN", hold_reason=None,
@@ -122,6 +124,8 @@ def test_active_in_envelope_and_z_serialization(_fake_session, monkeypatch):
     assert item["work_order_no"] == 90018 and item["hold_reason"] == "WAITING_MACHINE_TIME"
     # datetime UTC → `Z`(與既有讀 API / golden fixture 同法)
     assert item["opened_at"] == "2026-07-01T09:12:00Z"
+    assert item["failure_started_at"] == "2026-07-01T09:00:00Z"  # 0036 additive
+    assert item["production_resumed_at"] is None
     # status_history 同 detail 形(cmms canonical 欄位名 + 內部規格 additive is_downtime 計算欄)
     sh = item["status_history"]
     assert sh[0]["to_status"] == "OPEN" and sh[0]["changed_at"] == "2026-07-01T09:12:00Z"

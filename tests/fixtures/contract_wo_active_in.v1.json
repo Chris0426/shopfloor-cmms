@@ -8,6 +8,8 @@
       "closed_at": "2026-07-02T16:50:00Z",
       "status": "CLOSED",
       "hold_reason": "WAITING_MACHINE_TIME",
+      "failure_started_at": null,
+      "production_resumed_at": null,
       "status_history": [
         {
           "from_status": null,
@@ -43,6 +45,8 @@
       "closed_at": null,
       "status": "OPEN",
       "hold_reason": null,
+      "failure_started_at": null,
+      "production_resumed_at": null,
       "status_history": []
     }
   ],
