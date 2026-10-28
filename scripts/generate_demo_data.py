@@ -22,7 +22,7 @@ therefore the same demo database) come out every time.
 
 Stable ids the seeding script relies on:
     assets      EID-97001 .. EID-97060   (EID-97058..97060 are retired)
-    inventory   EC900001 .. EC900120 / ES-prefixed variants (see ITEM_CODES)
+    inventory   ES900001 .. ES900120 (EC / ES prefixes, see gen_inventory)
     work orders 96001 .. 96300
 
 Usage:
@@ -38,6 +38,11 @@ from datetime import date, timedelta
 from pathlib import Path
 
 SEED = 20260714
+
+# 號段:全部落在不與任何真實資料撞值的合成區段(2026-10-28 以私有驗證器逐值核過)。
+EID_BASE = 97001      # EID-97001 .. EID-97060
+WO_BASE = 96001       # 工單 96001 .. 96300;示範情境開的單接在其後(96301 起)
+ITEM_BASE = 900001    # 料號 ES900001 .. / EC900002 ..
 TODAY = date(2026, 7, 14)  # fixed "today" so the demo is reproducible
 
 # ---------------------------------------------------------------- vocabulary
@@ -226,7 +231,7 @@ def gen_assets(rng: random.Random) -> list[dict]:
     for i in range(n):
         family, atype, dept, line = FAMILIES[i % len(FAMILIES)]
         seq = i // len(FAMILIES) + 1
-        eid = f"EID-{97001 + i:05d}"
+        eid = f"EID-{EID_BASE + i:05d}"
         retired = i >= n - 3
         assets.append(
             {
@@ -293,11 +298,11 @@ def gen_pm_schedules(rng: random.Random, assets: list[dict], tasks: list[dict]) 
 
 
 def gen_inventory(rng: random.Random) -> list[dict]:
-    """120 spare-part items. Item codes: EC900001.. / ES000001.. (legacy prefixes)."""
+    """120 spare-part items. Item codes: ES900001.. / EC900002.. (legacy prefixes)."""
     items = []
     for i in range(120):
         prefix = "EC" if i % 3 else "ES"
-        code = f"{prefix}{i + 1:06d}"
+        code = f"{prefix}{ITEM_BASE + i:06d}"
         noun = PART_NOUNS[i % len(PART_NOUNS)]
         family = FAMILIES[i % len(FAMILIES)][0].upper()
         # a second applicable subtype for some items (multi-value column)
@@ -358,9 +363,9 @@ def gen_contacts(rng: random.Random) -> list[dict]:
                 "lname": last,
                 "fullname": f"{first} {last}",
                 "email": f"{first.lower()}.{last.lower()}@{domain}",
-                "wphone": f"+886-2-5550-{1000 + i:04d}",
+                "wphone": f"+1-555-01{i:02d}",
                 "ext": str(100 + i),
-                "mobile": f"+886-9{rng.randint(10000000, 99999999)}",
+                "mobile": f"+1-555-01{50 + i:02d}",
                 "waddress": "1 Demo Road, PLANT-1",
                 "wweb": f"https://{company.lower().replace(' ', '')}.{domain}",
             }
@@ -395,7 +400,7 @@ def gen_work_orders(rng: random.Random, assets: list[dict]) -> list[dict]:
     rows = []
     start = TODAY - timedelta(days=548)  # ~18 months
     for i in range(300):
-        wo_no = 96001 + i
+        wo_no = WO_BASE + i
         asset = live[i % len(live)]
         # deterministic-but-spread open dates across the window
         opened = start + timedelta(days=int(i * 548 / 300) + rng.randint(0, 1))
@@ -445,7 +450,7 @@ def gen_work_orders(rng: random.Random, assets: list[dict]) -> list[dict]:
                 "brief_desc": brief,
                 "diag": diag,
                 # legacy external reference: a few carry an MRQ ticket number
-                "comments": f"MRQ-{rng.randint(1000, 9999)}" if i % 19 == 0 else "",
+                "comments": f"MRQ-{wo_no}" if i % 19 == 0 else "",
                 "date_wo": mmddyy(opened),
                 "sch_date": mmddyy(opened) if is_pm else "",
                 "time": f"{rng.randint(9, 16):02d}:{rng.choice(['00', '15', '30', '45'])}:00",
