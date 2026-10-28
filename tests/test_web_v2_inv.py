@@ -97,9 +97,6 @@ def test_report_form_v2(env, role):
                  'name="brief_description"', 'name="photos"', 'id="scan-btn"', 'id="scan-video"',
                  'value="EID-70021"'):
         assert hook in v2, hook
-    # 私有樹專屬的掛鉤不得出現
-    for gone in ("seat-picker", "fsa-panel", "data-submit-once", "data-busy", "js-photo-accum"):
-        assert gone not in v2, gone
     assert 'role="alert"' not in v2                    # 無錯誤 ⇒ 不佔位
     assert _targets(v2) == _targets(v1)
 
@@ -245,7 +242,6 @@ def test_inventory_detail_v2(env, inv, role):
     assert "ES900004" in v2 and "ES900005" in v2 and "ES900009" in v2 and "ES000999" in v2
     assert "inventory/ES900004/x.jpg" in v2
     assert 'href="/app/suppliers/CMB"' in v2
-    assert "js-lightbox" not in v2 and "data-lightbox" not in v2
     if role == "admin":
         for a in ("/rfq", "/update", "/subtypes", "/adjust", "/photos", "/photos/1/delete"):
             assert f'action="/app/inventory/ES900004{a}"' in v2, a
@@ -375,8 +371,6 @@ def test_assistant_panel_v2(env, monkeypatch):
     assert "&lt;b&gt;hi&lt;/b&gt;" in r.text
     assert '<a href="/app/equipment/EID-70021">EID-70021</a>' in r.text
     assert " hidden" not in r.text.split('id="assistant-conv"')[0]  # 有會話 ⇒ 切換列可見
-    for gone in ("assistant_confirm", "msg-feedback", "dock__photo", "js-autosize"):
-        assert gone not in r.text, gone
     assert _targets(r.text) == _targets(r1.text)
 
 

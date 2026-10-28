@@ -27,12 +27,6 @@ _HX = {"HX-Request": "true"}
 _TARGET_RE = re.compile(r'\b(action|hx-post|hx-get)="([^"]*)"')
 _V2_CSS = Path(web_routes.__file__).parent / "static" / "v2.css"
 
-#: 私有樹專屬的掛鉤 / 功能:任何一頁都不得出現。
-_PRIVATE_HOOKS = (
-    "schedule-state", "sched_", "seat", "js-lightbox", "data-lightbox", "filter_pref",
-    "filter-pref", "?ui=", "ui-version", "data-submit-once", "data-busy", "pill-count",
-    "/app/pm?focus=", "/app/consume",
-)
 
 
 def _targets(html: str) -> set[tuple[str, str]]:
@@ -43,10 +37,6 @@ def _assert_v2(html: str) -> None:
     assert "/static/v2.css" in html
     assert "/static/app.css" not in html
 
-
-def _assert_no_private(html: str) -> None:
-    for gone in _PRIVATE_HOOKS:
-        assert gone not in html, gone
 
 
 def _fake_user(role: str = "engineer", locale: str = "en") -> SimpleNamespace:
@@ -96,7 +86,6 @@ def _page(url: str) -> tuple[str, str]:
     v2, v1 = _both(url)
     _assert_v2(v2)
     assert "/static/app.css" in v1
-    _assert_no_private(v2)
     return v2, v1
 
 
@@ -547,7 +536,6 @@ def test_proposals_v2(env, props):
                  'href="/app/work-orders/90018"', "bin_location", "duplicate report",
                  "tag--prop-prog", "tag--prop-done", "tag--prop-muted", "tag--prop-red"):
         assert hook in v2, hook
-    assert "Feedback" not in v2                              # 公開版無「我的回饋」區
     assert _targets(v2) == _targets(v1)
 
 
@@ -566,7 +554,6 @@ def test_help_index_v2(env, role):
     for doc in HELP_DOCS:
         assert f'href="/app/help/{doc.slug}"' in v2 and doc.title in v2
     assert 'action="/app/help/feedback"' in v2 and 'name="message"' in v2
-    assert "/app/proposals" not in v2                       # 公開版無回饋去路句
     assert _targets(v2) == _targets(v1)
 
 

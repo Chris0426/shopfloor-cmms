@@ -2,7 +2,7 @@
 {#- 新版介面 v2 我的提案(v1 = `proposals.html`)。唯讀:提案人追蹤自己送出的提案審核進度。
     ★ 狀態推導(PENDING 但已過 expires_at → 顯示 EXPIRED,顯示層、不改 DB)、提案目標連結(工單 / 品項)、
       dry-run diff(欄位:舊 → **新**)、裁決者 / 時間、分頁同 v1。
-    ★ 色 = v1 現值,只住細框、字墨色:PENDING 藍 / CONFIRMED 綠 / REJECTED 紅 / EXPIRED 灰;
+    ★ 色只住細框、字墨色:PENDING 藍 / CONFIRMED 綠 / REJECTED 紅 / EXPIRED 灰;
       操作類型 作廢工單 紅、其餘 藍。不可點的狀態 ⇒ 方角 `.tag`;可點的目標 ⇒ chip。 -#}
 {% set prop_css = {'PENDING': 'prog', 'CONFIRMED': 'done', 'REJECTED': 'red', 'EXPIRED': 'muted'} %}
 {% block title %}{{ t("myprop.title") }} · {{ t("app.name") }}{% endblock %}

@@ -149,7 +149,6 @@ def test_pm_due_list_engineer(env, pm_data):
     assert i18n.translate("pm.backfill.hint", "en") in html
     assert 'href="/app/pm?focus=PM-DUE&scope=all"' in html
     assert 'href="/admin/pm"' not in html                     # engineer 不見後台入口
-    assert 'href="/app/pm/browse"' not in html                # 公開版無「全部排程」頁
 
 
 def test_pm_due_list_admin_entry_and_operator_hides_backfill(env, pm_data):
@@ -199,7 +198,6 @@ def test_pm_backfill_confirm(env, pm_data):
     assert 'data-suggest="person"' in html
     assert 'href="/app/pm"' in html                           # 取消
     assert "Alice Fang" in html                               # 有效負責人預填說明
-    assert "pm.caution" not in html
 
 
 # ======================== admin 後台 ========================
@@ -209,7 +207,6 @@ def _assert_admin_shell(html: str, active: str) -> None:
     assert '<body class="admin">' in html
     nav = html[html.index('class="adm-nav"'):html.index("</nav>", html.index('class="adm-nav"'))]
     assert re.findall(r'href="([^"]+)"', nav) == _ADM_NAV     # 連結 / 順序同 v1
-    assert "/admin/costs" not in html and "/admin/consumables" not in html
     assert f'href="{active}" class="is-active" aria-current="page"' in html
     assert 'href="/app"' in html and 'href="/app/logout"' in html
     assert 'id="assistant-dock"' not in html                  # admin 殼無 dock
@@ -457,7 +454,6 @@ def test_admin_accounts_content(env, adm_data):
     html = client.get("/admin/accounts").text
     assert 'href="/admin/accounts/new"' in html
     assert 'onchange="this.form.submit()"' in html
-    assert 'value="viewer"' not in html and 'value="storekeeper"' not in html
     assert 'name="assignee" value="Ben Yeh"' in html and 'data-suggest="person"' in html
     assert 'name="new_password"' in html
     assert "adm-btn adm-btn--danger" in html                  # 停用 = 危險描邊
@@ -518,7 +514,6 @@ def test_admin_pm_list_and_htmx_partial(env, adm_data):
     html = client.get("/admin/pm").text
     assert 'id="task-results"' in html
     assert 'hx-target="#task-results"' in html and 'hx-push-url="true"' in html
-    assert 'name="subtype"' not in html                       # 公開版無子類型過濾
     assert 'action="/admin/pm"' in html and 'name="task_no"' in html
     part = client.get("/admin/pm?q=Sorter", headers={"HX-Request": "true"})
     assert part.status_code == 200
@@ -547,8 +542,6 @@ def test_admin_proposals_content(env, adm_data):
     assert 'href="/app/work-orders/90018"' in html
     assert "VOID" in html and "duplicate" in html
     assert "adm-btn adm-btn--primary" in html                 # 核准 = 實填
-    assert 'name="reason"' not in html                        # 公開版駁回無理由欄
-    assert 'name="disposition"' not in html                   # 公開版回饋單鍵結案
     assert "/admin/feedback/7/resolve" in html
     assert "Need a scan SOP" in html and "Old note" in html
 
@@ -586,7 +579,6 @@ def test_admin_notify_hooks(env, adm_data):
     assert i18n.translate("admin.notify.section.broadcast", "en") in html
     assert "banner banner--warn" in html                      # 通道未設定 → 琥珀
     assert 'title="' + "x" * 80 + '"' in html                 # 截斷錯誤附全文 title
-    assert "/admin/notify/preview" not in html                # 公開版無試算面板
 
 
 def test_admin_relationships_lookup_and_notfound(env, adm_data):
