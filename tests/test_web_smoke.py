@@ -328,8 +328,8 @@ def _detail_data(monkeypatch):
 
     async def _efc_opts(self, asset_id):  # D6:REACTIVE 結單真因下拉候選(efc 軸,code+人話+曾用)
         return [
-            SimpleNamespace(code="eqfPickupVacuumFault", descr="Pickup Vacuum Fault", used=True),
-            SimpleNamespace(code="eqfOtherFault", descr="Other Fault", used=False),
+            SimpleNamespace(code="demo_pickup_fault", descr="Pickup Vacuum Fault", used=True),
+            SimpleNamespace(code="demo_other_fault", descr="Other Fault", used=False),
         ]
 
     async def _get_asset(self, asset_id):  # 標頭機台名(工單只帶 EID → 附資產敘述)
@@ -381,7 +381,7 @@ def test_finish_form_shows_efc_combobox_for_reactive(as_user, _detail_data):
     assert "確認故障原因" in r.text
     assert "data-efc-combo" in r.text            # 多關鍵字 combobox 容器
     assert 'id="cb-list-confirmed_reason_code-finish"' in r.text  # 無 JS 退回原生 datalist
-    assert "eqfPickupVacuumFault" in r.text        # 候選 code(datalist + JSON)
+    assert "demo_pickup_fault" in r.text        # 候選 code(datalist + JSON)
     assert "Pickup Vacuum Fault" in r.text         # 人話描述供搜尋/顯示
 
 
@@ -410,11 +410,11 @@ def test_finish_post_passes_confirmed_reason(as_user, _detail_data, monkeypatch)
     monkeypatch.setattr(web_routes.WorkOrderService, "finish_work_order", _finish)
     r = client.post(
         "/app/work-orders/90018/transition",
-        data={"action": "finish", "confirmed_reason_code": "eqfPickupVacuumFault"},
+        data={"action": "finish", "confirmed_reason_code": "demo_pickup_fault"},
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert captured["confirmed_reason_code"] == "eqfPickupVacuumFault"
+    assert captured["confirmed_reason_code"] == "demo_pickup_fault"
 
 
 # ---- 語言切換(登入 → 寫回 user_account)----
@@ -3347,7 +3347,7 @@ def _vocab_data(monkeypatch):
                                 semantic_zh="循環停止")]
 
     async def _efc(self, station_hint=None):
-        return [SimpleNamespace(code="eqfSTA7_AirPressure", descr="Low Air Pressure",
+        return [SimpleNamespace(code="demo_air_pressure", descr="Low Air Pressure",
                                 station_hint="sta7")]
 
     monkeypatch.setattr(_adm.WorkOrderService, "list_hold_reasons", _holds)
@@ -3376,7 +3376,7 @@ def test_admin_vocab_lists_all_tables(as_user, _vocab_data):
     assert "org_type" in r.text and "stock_txn_kind" in r.text
     # C2 失效詞彙兩軸唯讀顯示
     assert "mes_failmode" in r.text and "equipment_failure_code" in r.text
-    assert "CycleStop" in r.text and "eqfSTA7_AirPressure" in r.text
+    assert "CycleStop" in r.text and "demo_air_pressure" in r.text
     # storage_bin 儲位受控詞彙(含 inactive + 啟停 toggle)
     assert "Storage bins" in r.text and "02A" in r.text and "OLD1" in r.text
     assert "/admin/vocab/storage-bins/02A/toggle" in r.text
