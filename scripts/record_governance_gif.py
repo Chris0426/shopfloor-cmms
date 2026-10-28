@@ -6,7 +6,9 @@ r"""錄製 README 的治理迴圈 GIF(docs/media/governance-loop.gif)。
   2. /admin/proposals:兩筆待確認提案,游標指向 agent:assistant 提的 close_work_order(WO 96301)
   3. 按該筆的 Confirm
   4. /admin/audit:最新一筆確認記在 human:admin 名下,不是 agent
-  5. /app/work-orders/96301:狀態 Closed 與時間軸
+  5. /app/work-orders/96301:狀態 Closed,再往下捲到工作日誌與領料
+
+選擇器對的是 v2 介面(templates/v2/;登入頁 v2 仍沿用 v1 的 login.html)。
 
 每一步都對 page.content() 做脫敏檢查(整字、不分大小寫,禁字由環境變數帶入),命中即中止;
 並列出各頁看到的產線名稱(預期只有 Zone A–Zone D)。
@@ -30,6 +32,7 @@ UI 畫面多為平塗色故不 dither——不這樣做 12 fps / 1024 px 約 3 M
             脫敏禁字(必填;來源是私有的 PUBLISHING.md 敏感詞清單,絕不寫進本 repo)
   BASE_URL  站台位址,預設 http://127.0.0.1:8000
   OUT_DIR   輸出目錄,預設目前目錄(產出 governance-loop.gif 與原始 .webm)
+  TEXT_DIR  選填;每個檢查步驟把 document.body.innerText 存成 <step>.txt,供另行核對畫面文字
   GIF_FPS   預設 12
   GIF_WIDTH 預設 1024
   MODE      full(預設)/ convert(只重轉既有 .webm,配 TRIM_START)/ sweep(只跑脫敏補充檢查)
@@ -55,6 +58,7 @@ BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 OUT_DIR = Path(os.environ.get("OUT_DIR", ".")).resolve()
 GIF_FPS = int(os.environ.get("GIF_FPS", "12"))
 GIF_WIDTH = int(os.environ.get("GIF_WIDTH", "1024"))
+TEXT_DIR = Path(os.environ["TEXT_DIR"]).resolve() if os.environ.get("TEXT_DIR") else None
 VIEWPORT = {"width": 1280, "height": 800}
 WORK_ORDER_NO = "96301"
 
@@ -111,28 +115,39 @@ gate_log: list[str] = []
 def check_page(page: Page, step: str) -> None:
     """脫敏閘門:命中任何禁字就丟例外,並收集產線名稱。"""
     html = page.content()
+    # 標籤名(HTML 元素名)不是畫面內容,短禁字可能誤中;只抹掉元素名,屬性與文字照掃
+    scan = re.sub(r"</?[A-Za-z][\w-]*", "<", html)
     hits = []
     for term, rx in FORBIDDEN_RE:
-        for m in rx.finditer(html):
-            ctx = html[max(0, m.start() - 40) : m.end() + 40].replace("\n", " ")
+        for m in rx.finditer(scan):
+            ctx = scan[max(0, m.start() - 40) : m.end() + 40].replace("\n", " ")
             hits.append(f"{term!r} at {m.start()}: ...{ctx}...")
     names = sorted(set(LINE_NAME_RE.findall(html)))
     seen_line_names.update(names)
     line = f"[gate] {step:<22} url={page.url} forbidden_hits={len(hits)} line_names={names}"
     print(line, flush=True)
     gate_log.append(line)
+    if TEXT_DIR is not None:
+        TEXT_DIR.mkdir(parents=True, exist_ok=True)
+        (TEXT_DIR / f"{step}.txt").write_text(
+            page.evaluate("document.body.innerText"), encoding="utf-8"
+        )
     if hits:
         for h in hits:
             print("  HIT " + h, file=sys.stderr)
         raise SystemExit(f"SANITIZATION GATE FAILED at step {step!r}: {len(hits)} hit(s)")
 
 
-def glide_to(page: Page, locator, steps: int = 25) -> None:
-    """游標平滑移到元素中心(給觀者看清楚指的是哪裡)。"""
+def glide_to(page: Page, locator, steps: int = 25, first_line: bool = False) -> None:
+    """游標平滑移到元素中心(給觀者看清楚指的是哪裡)。
+
+    first_line=True:改指第一行文字的高度 —— v2 表格列較高、文字靠上,指儲存格中心會落在空白處。
+    """
     box = locator.bounding_box()
     if box is None:
         raise SystemExit(f"element not visible: {locator}")
-    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=steps)
+    dy = min(box["height"] / 2, 16) if first_line else box["height"] / 2
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + dy, steps=steps)
 
 
 def find_ffmpeg() -> str:
@@ -201,9 +216,10 @@ def record() -> tuple[Path, float]:
         if agent_row.count() != 1 or WORK_ORDER_NO not in agent_row.inner_text():
             raise SystemExit("agent:assistant proposal for WO 96301 not found")
         page.wait_for_timeout(2000)
-        glide_to(page, agent_row.locator("td.mono"))
+        glide_to(page, agent_row.locator("td.mono"), first_line=True)
         page.wait_for_timeout(1800)
-        glide_to(page, agent_row.locator("td").first)
+        # v2:操作欄是「Close work order」標籤 + WO-96301 chip,指標籤
+        glide_to(page, agent_row.locator("td").first.locator(".tag"))
         page.wait_for_timeout(1800)
 
         # 3. Confirm
@@ -224,7 +240,8 @@ def record() -> tuple[Path, float]:
         if "human:admin" not in first_text:
             raise SystemExit("newest audit row is not attributed to human:admin")
         page.wait_for_timeout(1500)
-        glide_to(page, first_row.locator(".author-chip"))
+        # v2:作者是 span.author(v1 的 .author-chip 已不存在)
+        glide_to(page, first_row.locator(".author"))
         page.wait_for_timeout(2800)
 
         # 5. 工單 96301
@@ -234,9 +251,14 @@ def record() -> tuple[Path, float]:
         if "Closed" not in body:
             raise SystemExit("WO 96301 does not show Closed")
         page.wait_for_timeout(2500)
-        page.mouse.wheel(0, 380)
+        # v2 沒有 v1 那種狀態時間軸;往下捲到領料區底端剛好入鏡,
+        # 畫面保留結案處置 / 停機時數、工作日誌與領料
+        parts = page.locator("section.sec:has(#parts)").bounding_box()
+        if parts is None:
+            raise SystemExit("parts section not found on the work-order page")
+        page.mouse.wheel(0, max(0, parts["y"] + parts["height"] + 24 - VIEWPORT["height"]))
         page.wait_for_timeout(3000)
-        check_page(page, "5b-timeline")
+        check_page(page, "5b-log-parts")
 
         video_path = Path(page.video.path())
         context.close()
