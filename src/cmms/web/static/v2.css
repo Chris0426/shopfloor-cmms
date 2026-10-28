@@ -461,6 +461,8 @@ mark.armed {
     display: grid; grid-template-columns: 220px minmax(0, 1fr) 340px;
     max-width: 1440px; margin: 0 auto;
   }
+  /* 不渲染助理 dock(CMMS_UI_HIDE_ASSISTANT=1):兩欄,主欄寬度同有 dock 時 */
+  .shell--nodock { grid-template-columns: 220px minmax(0, 1fr); max-width: 1100px; }
   .sidebar {
     position: sticky; top: 0; height: 100vh;
     display: flex; flex-direction: column; padding: 18px 12px;
@@ -915,6 +917,7 @@ input.check { width: 20px; height: 20px; accent-color: var(--ink); }
   .filterbar > .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .filterbar > .chips::-webkit-scrollbar { display: none; }
   .page { padding-right: 30px; }
+  .shell--nodock .page { padding-right: 0; }   /* 無助理書籤 ⇒ 不必讓位 */
 }
 
 @media (min-width: 900px) {

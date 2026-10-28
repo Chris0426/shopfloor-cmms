@@ -300,6 +300,15 @@ def test_detail_hide_jira(as_user, detail, monkeypatch):
     assert _targets(t) == _targets(v1)
 
 
+def test_detail_hide_assistant(as_user, detail, monkeypatch):
+    t = _get(_URL).text
+    assert 'id="assistant-dock"' in t and 'class="shell"' in t
+    monkeypatch.setattr(web_routes, "get_settings", lambda: _settings(ui_hide_assistant=True))
+    t = _get(_URL).text
+    assert 'id="assistant-dock"' not in t and "data-assistant-toggle" not in t
+    assert 'class="shell shell--nodock"' in t            # 桌面殼改兩欄,不留空 dock 欄
+
+
 @pytest.mark.parametrize(("code", "cls", "text"), [
     ("assign_ok", "ok", None),
     ("brief_err", "err", None),

@@ -20,7 +20,7 @@
 </head>
 <body>
   {% include "partials/demo_banner.html" %}
-  <div class="shell">
+  <div class="shell{{ ' shell--nodock' if ui_hide_assistant else '' }}">
 
     {# 桌面左側導覽(≥900px;手機隱藏,由底部 tab 取代)—— 8 項,逐字同 v1 #}
     <aside class="sidebar">
