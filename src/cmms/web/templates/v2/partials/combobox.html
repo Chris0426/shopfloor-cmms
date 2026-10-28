@@ -1,0 +1,16 @@
+{#- 新版介面 v2 泛用多關鍵字 combobox(v1 = `partials/combobox.html`)。**簽章與 DOM 鉤子逐字同 v1**
+    (`[data-efc-combo]` / `.efc-combo-input` / `<datalist>` / `.efc-combo-data`,app.js 綁這些),
+    唯一差別:v1 的第 6 個參數(inline style 字串)在 v2 改收 **class 名**(v2 零 `style=`),
+    參數位置不變 —— 呼叫端傳 `"efc-combo--wide"` 之類的修飾 class。 -#}
+{% macro combobox(name, value, options, t, dom_id, wrap_class="", placeholder="", nomatch="", used_label="", add_url="", add_label="") %}
+<div class="efc-combo{% if wrap_class %} {{ wrap_class }}{% endif %}" data-efc-combo
+     data-nomatch="{{ nomatch }}"
+     {% if used_label %}data-used="{{ used_label }}"{% endif %}
+     {% if add_url %}data-add-url="{{ add_url }}" data-add-label="{{ add_label }}"{% endif %}>
+  <input name="{{ name }}" class="form-input efc-combo-input" autocomplete="off"
+         list="cb-list-{{ name }}-{{ dom_id }}" value="{{ value or '' }}"
+         placeholder="{{ placeholder }}">
+  <datalist id="cb-list-{{ name }}-{{ dom_id }}">{% for o in options %}<option value="{{ o.c }}"{% if o.d %} label="{{ o.d }}"{% endif %}>{% endfor %}</datalist>
+  <script type="application/json" class="efc-combo-data">{{ options | tojson }}</script>
+</div>
+{% endmacro %}

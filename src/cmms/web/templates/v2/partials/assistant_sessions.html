@@ -1,0 +1,18 @@
+{#- 新版介面 v2 會話切換列(v1 = `partials/assistant_sessions.html`;開啟中對話 chips)。
+    **恆渲染**容器(id=assistant-sessions)—— panel 首載與 phase 1 OOB 更新共用此 markup。
+    `oob=True`(phase 1 turn 回應)→ 帶 hx-swap-oob,htmx 據 id 就地換掉切換列。
+    hx 與 role / aria 同 v1;無會話時 v1 的 inline `display:none` 改 `hidden` 屬性
+    (v2 零 `style=`;仍留在 DOM 供 OOB 目標,OOB 換整個元素,語意相同)。 -#}
+<div id="assistant-sessions" class="dock__sessions" role="tablist"
+     {% if oob %}hx-swap-oob="true"{% endif %}
+     {% if not conversations %}hidden{% endif %}
+     aria-label="{{ t('assistant.sessions') }}">
+  {% for c in conversations %}
+  <button type="button" role="tab" title="{{ c.title }}"
+          class="dock__session {{ 'is-current' if c.id == current_id else '' }}"
+          aria-selected="{{ 'true' if c.id == current_id else 'false' }}"
+          hx-get="/app/assistant/{{ c.id }}" hx-target="#assistant-panel" hx-swap="innerHTML">
+    {{ c.title|truncate(26, True) }}
+  </button>
+  {% endfor %}
+</div>

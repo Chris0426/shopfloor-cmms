@@ -1,0 +1,36 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 新增供應商(v1 = `supplier_new.html`,admin-only)。一張空白機構卡。
+    ★ 表單 action / 欄位名 / org_type 預設 Supplier / `autofocus` / 兩句說明(代碼自動產生 / 建立後補聯絡人)
+      同 v1;`?msg=err` 走 v2 base 的 banner 區(v1 = err)。
+    ★ 主動作 =「建立供應商」實填;取消 = 描邊連結。 -#}
+{% set msg_text = {'err': t('sup.create.err')}.get(msg) if msg else none %}
+{% block title %}{{ t("sup.create.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("sup.create.title") }}{% endblock %}
+{% block content %}
+<form class="sheet sheet--form sheet--card item-form" method="post" action="/app/suppliers/new">
+  <div class="item-grid">
+    {#- name = 必填;org_id(company slug)由名稱自動導出(PK,建立後不可變) -#}
+    <label class="form-field item-grid__full"><span class="form-label">{{ t('sup.field.name') }}</span>
+      <input class="form-input" name="name" required placeholder="{{ t('sup.field.name') }}"
+             title="{{ t('sup.create.namehint') }}" autofocus autocomplete="off"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.type') }}</span>
+      <select class="form-input" name="org_type">
+        {% for ot in org_types %}
+        <option value="{{ ot.code }}" {% if ot.code == 'Supplier' %}selected{% endif %}>{{ ot.label }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.website') }}</span>
+      <input class="form-input" name="website" placeholder="{{ t('sup.website') }}"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.phone') }}</span>
+      <input class="form-input" name="phone" placeholder="{{ t('sup.phone') }}"></label>
+    <label class="form-field item-grid__full"><span class="form-label">{{ t('sup.address') }}</span>
+      <input class="form-input" name="address" placeholder="{{ t('sup.address') }}"></label>
+  </div>
+  <p class="form-hint">{{ t("sup.create.namehint") }}</p>
+  <p class="form-hint">{{ t("sup.create.nexthint") }}</p>
+  <div class="btnrow">
+    <button type="submit" class="btn btn--primary">{{ t("sup.create.submit") }}</button>
+    <a href="/app/suppliers" class="btn btn--secondary">{{ t("action.cancel") }}</a>
+  </div>
+</form>
+{% endblock %}

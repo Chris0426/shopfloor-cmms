@@ -1,0 +1,24 @@
+{#- 新版介面 v2 保養任務清單區塊(v1 = `partials/admin_task_list.html`;整頁 include + HTMX 即時過濾共用)。
+    ★ 任務連結 `/admin/pm/<task_no>`、三欄順序、空清單文案逐字同 v1;任務碼 = 可點藥丸(chip),狀態 = 不可點細框 tag。
+      啟用 = 綠色只住細框;停用列壓平。 -#}
+{% if tasks %}
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead><tr><th>{{ t("admin.pm.task") }}</th><th>{{ t("admin.pm.desc") }}</th><th>{{ t("admin.field.status") }}</th></tr></thead>
+  <tbody>
+    {% for tk in tasks %}
+    <tr{% if not tk.is_active %} class="is-flat"{% endif %}>
+      <td><a class="chip chip--id mono" href="/admin/pm/{{ tk.task_no }}">{{ tk.task_no }}</a></td>
+      <td>{{ tk.description }}</td>
+      <td>
+        {% if tk.is_active %}<span class="tag tag--ok-v1">{{ t("admin.status.active") }}</span>
+        {% else %}<span class="tag">{{ t("admin.status.inactive") }}</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty">{{ t("admin.pm.empty") }}</p>
+{% endif %}

@@ -1,0 +1,10 @@
+{#- 新版介面 v2 自動完成建議清單 fragment(v1 = `partials/suggest.html`,/app/suggest)。
+    ★ **DOM 逐字同 v1**:`button.ac-item[data-value][data-extra]` / `.ac-val` / `.ac-hint` ——
+      app.js 以這些 class 與 data-* 讀值、嚴格驗證以 `.ac-item[data-value]` 比對精確命中。
+      外觀全在 v2.css(`.ac-box` / `.ac-item` 由 app.js 插進 body,只能從 CSS 換皮)。 -#}
+{% for o in options %}
+<button type="button" class="ac-item" data-value="{{ o.value }}"{% if o.extra %} data-extra="{{ o.extra }}"{% endif %}>
+  <span class="ac-val">{{ o.label }}</span>
+  {% if o.hint %}<span class="ac-hint">{{ o.hint }}</span>{% endif %}
+</button>
+{% endfor %}

@@ -1,0 +1,125 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 到期保養(v1 = `pm.html`)= 牆上的 PM 點檢表:嚴格欄線、一行一項、右緣到期日。
+    ★ 連結 / 條件 / 補開鈕的顯示判準逐字同 v1;只換皮。
+    ★ 頁首「新增保養」是離開本頁的入口(admin),不是過濾 chip ⇒ 描邊次鈕;本頁主動作 = 「補開工單」。
+    ★ 逾期 = 琥珀 armed(「等你動作」色,不用紅);到期未逾期 = 墨色不上色。
+      PM 身分 = 靛藍細框標,與工單狀態條分開。
+    ★ 一視口一顆實心主鈕:清單模式每項的補開鈕 = 描邊;focus 單項詳情 = 實填。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% block title %}{{ t("nav.pm") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.pm") }}{% endblock %}
+{% block content %}
+{% if is_admin %}
+<div class="pm-entry">
+  <a href="/admin/pm" class="btn btn--secondary" title="{{ t('pm.create.entry.hint') }}">{{ icon("plus") }}{{ t("pm.create.entry") }}</a>
+</div>
+{% endif %}
+<div class="filterbar pm-filters">
+  {#- 視圖 ‖ 範圍併一列(手機第一屏讓給到期項)。focus 模式只剩視圖。 -#}
+  <div class="chips">
+    <a class="chip is-active" aria-current="true" href="/app/pm?scope={{ scope }}">{{ t("pm.view.list") }}</a>
+    <a class="chip" href="/app/pm/calendar?scope={{ scope }}">{{ t("pm.view.calendar") }}</a>
+    <a class="chip" href="/app/pm/calendar?view=week&scope={{ scope }}">{{ t("pm.view.week") }}</a>
+    <a class="chip" href="/app/pm/calendar?view=day&scope={{ scope }}">{{ t("pm.view.day") }}</a>
+    {% if not focused %}
+    <span class="chips__div" aria-hidden="true"></span>
+    {% for key, label in [('mine','scope.mine'), ('all','scope.all')] %}
+    <a class="chip{{ ' is-active' if scope == key else '' }}"{% if scope == key %} aria-current="true"{% endif %} href="/app/pm?scope={{ key }}">{{ t(label) }}</a>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+
+{% if focused %}
+<p class="pm-focusbar"><span class="form-hint">{{ t("pm.focus.hint") }}</span>
+  <a class="text-link pm-showall" href="/app/pm?scope={{ scope }}">{{ t("pm.focus.showall") }} →</a></p>
+{% endif %}
+
+{% macro backfill_button(pm) %}
+{#- 補開工單鈕只在「已到期(含週末提前)且本期未生成」顯示;到期自動開單由排程器負責。
+    operator 無 PM 生成 / 補開權(domain 亦擋)→ 隱藏。
+    連結至確認頁(未儲存前不成立工單、可改 owner、可取消),不直接 POST 生成。 -#}
+{% if pm_due_by(pm.next_due_date, today) and pm.pm_id not in generated and not is_operator %}
+<div class="pm-row__act">
+  <a class="btn {{ 'btn--primary' if focused else 'btn--secondary' }} pm-exec" href="/app/pm/{{ pm.pm_id }}/backfill">{{ t("pm.backfill") }}</a>
+</div>
+{% endif %}
+{% endmacro %}
+
+{% if items %}
+<div class="ledger ledger--list ledger--pm">
+  {% for pm in items %}
+  {% set overdue = pm.next_due_date and pm.next_due_date < today %}
+  {% set task_txt = task_names.get(pm.task_id, pm.task_id) or "—" %}
+  {% set meta_txt %}{% if pm.frequency_interval %}{{ t("pm.every") }} {{ pm.frequency_interval }} {{ pm.frequency_unit or "" }}{% endif %}{% if pm.frequency_interval and pm.effective_assignee %} · {% endif %}{% if pm.effective_assignee %}{{ t("wo.owner") }} {{ pm.effective_assignee }}{% endif %}{% endset %}
+  <div class="ledger__row pm-row{{ ' is-overdue' if overdue else '' }}{{ ' is-focus' if focused else '' }}">
+    <span class="ledger__strip" aria-hidden="true"></span>
+    {#- 清單項可點入 PM 詳情(focus);詳情本身不再重複連自己(同 v1) -#}
+    {% if focused %}
+    <div class="ledger__link">
+    {% else %}
+    <a class="ledger__link" href="/app/pm?focus={{ pm.pm_id }}&scope={{ scope }}">
+    {% endif %}
+      <span class="ledger__body">
+        <span class="ln ln--head">
+          <span class="tag tag--indigo pm-id">{{ pm.pm_id }}</span>
+          <span class="pm-asset">{{ pm.asset_id }}</span>
+        </span>
+        <span class="ln"><span class="pm-task cut" title="{{ task_txt }}">{{ task_txt }}</span></span>
+        <span class="ln ln--meta">{% if meta_txt|trim %}<span class="meta cut" title="{{ meta_txt|trim }}">{{ meta_txt|trim }}</span>{% endif %}</span>
+      </span>
+      {#- 右緣:到期日。逾期 ⇒ 琥珀螢光筆(armed);未逾期 ⇒ 墨色不上色 -#}
+      <span class="ledger__time pm-due">
+        <span class="pm-due__k">{{ t("pm.next_due") }}</span>
+        <span class="date">{{ pm.next_due_date }}</span>
+        {% if overdue %}<mark class="armed pm-due__over">{{ t("pm.overdue") }}</mark>{% endif %}
+      </span>
+    {% if focused %}</div>{% else %}</a>{% endif %}
+    {{ backfill_button(pm) }}
+  </div>
+  {% endfor %}
+</div>
+<p class="form-hint list-hint">{{ t("pm.backfill.hint") }}</p>
+
+{% if focused %}
+{#- 保養細項:唯讀 —— 步驟(依序)+ 每步用料(連備品明細)+ 工項層級用料彙總。編輯留 admin。
+    class 與工單詳情 PM 細項同一組 `.pm-step*`,不另起第二套。 -#}
+<section class="sec pm-detail">
+  <h2 class="sec__h">{{ t("pm.steps") }}</h2>
+  <div class="pm-steps">
+    {% if steps %}
+    {% for s in steps %}
+    <div class="pm-step">
+      {% if s.proc_seq is not none %}<span class="pm-step__seq">#{{ s.proc_seq }}</span>{% endif %}
+      <p class="pm-step__desc">{{ s.task_desc }}</p>
+      {% set parts = step_parts.get(s.id, []) %}
+      {% if parts %}
+      <div class="chips chips--wrap chips--flush">
+        {% for p in parts %}
+        <a class="chip chip--id" href="/app/inventory/{{ p.item_code }}">{{ p.item_code }}{% if p.replace_qty is not none %} ×{{ "%g"|format(p.replace_qty|float) }}{% endif %}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if part_summary %}
+    <p class="sec__sub">{{ t("pm.parts_summary") }}</p>
+    <div class="chips chips--wrap chips--flush">
+      {% for code, qty in part_summary.items() %}
+      <a class="chip chip--id" href="/app/inventory/{{ code }}">{{ code }} ×{{ "%g"|format(qty|float) }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% else %}
+    <p class="form-hint">{{ t("pm.nosteps") }}</p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% elif scope == 'mine' %}
+<p class="empty">{{ t("scope.empty") }} <a class="text-link" href="/app/pm?scope=all">{{ t("scope.all") }} →</a></p>
+{% else %}
+<p class="empty">{{ t("pm.empty") }}</p>
+{% endif %}
+{% endblock %}

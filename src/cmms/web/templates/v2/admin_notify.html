@@ -1,0 +1,208 @@
+{% extends "v2/admin_base.html" %}
+{% from "v2/partials/multi_input.html" import multi_input %}
+{#- 新版介面 v2 通知收件人(v1 = `admin_notify.html`)。
+    由上而下:通道配置三格 → ① 人員通訊錄(機台負責人)+ 新增 → ② 廣播名單 + 新增 → 近期 outbox(唯讀)。
+    ★ 兩區的拆法(`assignee_name` 有值 = 通訊錄,空 = 廣播)、表頭欄位、update / toggle / 新增 form 的
+      action 與欄位名、`multi_input("watch_assignees", …)` macro、錯誤截 60 字逐字同 v1
+      (截斷處另掛 title 給全文)。
+    ★ 收件人列:v1 把整列輸入塞進一格;v2 讓每個輸入落在自己的表頭欄下,以 `form="rcp<id>"` 掛進
+      下方展開列的 form(一次送出,欄位名不變);關注清單收在 `<details>`,主列列高不被撐開。
+    ★ 色:未設定通道 ⇒ 琥珀 warn 列(v1 紅字);啟用 = 綠色細框、停用 = 中性 tag;關注 = 靛藍細框。
+    ★ 本頁零實填:新增 / 行內儲存 / 啟停一律描邊。 -#}
+{% block title %}{{ t("admin.notify.title") }} · {{ t("nav.admin") }}{% endblock %}
+{% block content %}
+<div class="adm-head"><h2 class="adm-h2">{{ t("admin.notify.title") }}</h2></div>
+<p class="form-hint form-hint--lead">{{ t("admin.notify.intro") }}</p>
+
+{#- ---- 通道配置狀態 ---- -#}
+<div class="adm-stats">
+  <div class="adm-stat">
+    <span class="adm-stat__n">{{ "✓" if smtp_ok else "—" }}</span>
+    <span class="adm-stat__l">{{ t("admin.notify.smtp") }}</span>
+  </div>
+  <div class="adm-stat">
+    <span class="adm-stat__n">{{ "✓" if telegram_ok else "—" }}</span>
+    <span class="adm-stat__l">{{ t("admin.notify.telegram") }}</span>
+  </div>
+  <div class="adm-stat">
+    <span class="adm-stat__n">{{ failed_count }}</span>
+    <span class="adm-stat__l">{{ t("admin.notify.failed") }}</span>
+  </div>
+</div>
+{% if not smtp_ok or not telegram_ok %}
+<div class="banner banner--warn banner--inpage" role="note">{{ t("admin.notify.unconfigured") }}</div>
+{% endif %}
+
+{% set contacts = recipients | selectattr("assignee_name") | list %}
+{% set broadcasts = recipients | rejectattr("assignee_name") | list %}
+
+{#- 收件人一列 = 主列(各欄輸入,以 form= 掛進下方 form)+ 展開列(form 本體 + 關注清單) -#}
+{% macro recipient_row(r) %}
+<tr class="rcp-row{{ ' is-flat' if not r.is_active else '' }}">
+  <td><input class="adm-in ntf-in" form="rcp{{ r.id }}" name="name" value="{{ r.name }}" required
+             placeholder="{{ t('admin.notify.name') }}" aria-label="{{ t('admin.notify.name') }}"></td>
+  <td><input class="adm-in ntf-in" form="rcp{{ r.id }}" name="email" value="{{ r.email or '' }}"
+             placeholder="{{ t('admin.notify.email') }}" aria-label="{{ t('admin.notify.email') }}" autocomplete="off"></td>
+  <td><input class="adm-in ntf-in mono" form="rcp{{ r.id }}" name="telegram_chat_id"
+             value="{{ r.telegram_chat_id or '' }}" placeholder="{{ t('admin.notify.chatid') }}"
+             aria-label="{{ t('admin.notify.chatid') }}" autocomplete="off"></td>
+  <td><input class="adm-in ntf-in" form="rcp{{ r.id }}" name="assignee_name" value="{{ r.assignee_name or '' }}"
+             data-suggest="person" placeholder="{{ t('admin.notify.assignee') }}"
+             aria-label="{{ t('admin.notify.assignee') }}" autocomplete="off"></td>
+  <td>
+    <div class="ntf-flags">
+      <label><input class="check" form="rcp{{ r.id }}" type="checkbox" name="notify_on_open" value="1" {{ 'checked' if r.notify_on_open else '' }}>{{ t("admin.notify.onopen") }}</label>
+    </div>
+  </td>
+  <td>
+    <div class="ntf-flags">
+      <label><input class="check" form="rcp{{ r.id }}" type="checkbox" name="notify_on_close" value="1" {{ 'checked' if r.notify_on_close else '' }}>{{ t("admin.notify.onclose") }}</label>
+    </div>
+  </td>
+  <td>
+    {% if r.is_active %}<span class="tag tag--ok-v1">{{ t("admin.status.active") }}</span>
+    {% else %}<span class="tag">{{ t("admin.status.inactive") }}</span>{% endif %}
+  </td>
+  <td>
+    <div class="adm-actions">
+      <button type="submit" form="rcp{{ r.id }}" class="adm-btn">{{ t("admin.action.save") }}</button>
+      <form method="post" action="/admin/notify/{{ r.id }}/toggle">
+        <input type="hidden" name="is_active" value="{{ '0' if r.is_active else '1' }}">
+        <button type="submit" class="adm-btn">{{ t("admin.action.deactivate") if r.is_active else t("admin.action.activate") }}</button>
+      </form>
+    </div>
+  </td>
+</tr>
+{#- 關注清單:主列不放編輯(列高不被撐開),編輯在展開列裡。<details> 零 JS 可用;
+    表單本體放這裡,主列的輸入以 form= 掛進來 → 一次送出、欄位仍與表頭對齊。 -#}
+<tr class="rcp-edit{{ ' is-flat' if not r.is_active else '' }}">
+  <td colspan="8">
+    <form id="rcp{{ r.id }}" method="post" action="/admin/notify/{{ r.id }}/update">
+      <details class="ntf-watch">
+        <summary>
+          <span>{{ t("admin.notify.watch") }}</span>
+          {% if r.watches %}{% for w in r.watches %}<span class="tag tag--indigo">{{ w }}</span>{% endfor %}
+          {% else %}<span class="form-hint ntf-none">—</span>{% endif %}
+        </summary>
+        <p class="form-hint">{{ t("admin.notify.watch_hint") }}</p>
+        {{ multi_input("watch_assignees", r.watches, t("admin.notify.watch_ph"), t) }}
+      </details>
+    </form>
+  </td>
+</tr>
+{% endmacro %}
+
+{% macro recipient_head() %}
+<thead>
+  <tr>
+    <th>{{ t("admin.notify.name") }}</th>
+    <th>{{ t("admin.notify.email") }}</th>
+    <th>{{ t("admin.notify.chatid") }}</th>
+    <th>{{ t("admin.notify.assignee") }}</th>
+    <th>{{ t("admin.notify.onopen") }}</th>
+    <th>{{ t("admin.notify.onclose") }}</th>
+    <th>{{ t("admin.notify.state") }}</th>
+    <th></th>
+  </tr>
+</thead>
+{% endmacro %}
+
+{#- ==== ① 人員通訊錄(機台負責人)==== -#}
+<h3 class="adm-h3">{{ t("admin.notify.section.contacts") }}</h3>
+<p class="form-hint">{{ t("admin.notify.contacts_hint") }}</p>
+<div class="adm-scroll">
+<table class="adm-table ntf-table">
+  {{ recipient_head() }}
+  <tbody>
+    {% for r in contacts %}{{ recipient_row(r) }}{% endfor %}
+    {% if not contacts %}
+    <tr><td colspan="8" class="form-hint">{{ t("admin.notify.contacts_empty") }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+</div>
+
+{#- 新增通訊錄(機台負責人;assignee_name 必填,免勾廣播) -#}
+<form method="post" action="/admin/notify" class="adm-form">
+  <h4 class="adm-h4">{{ t("admin.notify.add_contact") }}</h4>
+  <p class="form-hint">{{ t("admin.notify.add_contact_hint") }}</p>
+  <label class="form-row"><span class="form-label">{{ t("admin.notify.assignee") }}</span>
+    <input class="form-input" name="assignee_name" required data-suggest="person" autocomplete="off" placeholder="{{ t('admin.notify.assignee_ph') }}"></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.notify.name") }}</span>
+    <input class="form-input" name="name" required autocomplete="off"></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.notify.email") }}</span>
+    <input class="form-input" name="email" type="email" autocomplete="off"></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.notify.chatid") }}</span>
+    <input class="form-input mono" name="telegram_chat_id" autocomplete="off"></label>
+  <div class="form-row">
+    <span class="form-label">{{ t("admin.notify.watch") }}</span>
+    <p class="form-hint">{{ t("admin.notify.watch_hint") }}</p>
+    {{ multi_input("watch_assignees", [], t("admin.notify.watch_ph"), t) }}
+  </div>
+  <div class="btnrow"><button type="submit" class="btn btn--secondary">{{ t("admin.notify.add_contact") }}</button></div>
+</form>
+
+{#- ==== ② 廣播名單(工程團隊 / 線管理者群組;勾開 / 結案廣播,不綁機台)==== -#}
+<h3 class="adm-h3">{{ t("admin.notify.section.broadcast") }}</h3>
+<p class="form-hint">{{ t("admin.notify.broadcast_hint") }}</p>
+<div class="adm-scroll">
+<table class="adm-table ntf-table">
+  {{ recipient_head() }}
+  <tbody>
+    {% for r in broadcasts %}{{ recipient_row(r) }}{% endfor %}
+    {% if not broadcasts %}
+    <tr><td colspan="8" class="form-hint">{{ t("admin.notify.broadcast_empty") }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+</div>
+
+{#- 新增廣播收件人 -#}
+<form method="post" action="/admin/notify" class="adm-form">
+  <h4 class="adm-h4">{{ t("admin.notify.add_broadcast") }}</h4>
+  <p class="form-hint">{{ t("admin.notify.add_broadcast_hint") }}</p>
+  <label class="form-row"><span class="form-label">{{ t("admin.notify.name") }}</span>
+    <input class="form-input" name="name" required autocomplete="off"></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.notify.email") }}</span>
+    <input class="form-input" name="email" type="email" autocomplete="off"></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.notify.chatid") }}</span>
+    <input class="form-input mono" name="telegram_chat_id" autocomplete="off"></label>
+  <label class="adm-check"><input class="check" type="checkbox" name="notify_on_open" value="1"> {{ t("admin.notify.onopen_full") }}</label>
+  <label class="adm-check"><input class="check" type="checkbox" name="notify_on_close" value="1"> {{ t("admin.notify.onclose_full") }}</label>
+  <div class="form-row">
+    <span class="form-label">{{ t("admin.notify.watch") }}</span>
+    <p class="form-hint">{{ t("admin.notify.watch_hint") }}</p>
+    {{ multi_input("watch_assignees", [], t("admin.notify.watch_ph"), t) }}
+  </div>
+  <div class="btnrow"><button type="submit" class="btn btn--secondary">{{ t("admin.notify.add_broadcast") }}</button></div>
+</form>
+
+{#- ---- 近期 outbox(唯讀)---- -#}
+<h3 class="adm-h3">{{ t("admin.notify.outbox") }}</h3>
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead><tr>
+    <th>WO</th><th>{{ t("admin.notify.event") }}</th><th>{{ t("admin.notify.channel") }}</th>
+    <th>{{ t("admin.notify.recipient") }}</th><th>{{ t("admin.notify.state") }}</th>
+    <th class="num">{{ t("admin.notify.attempts") }}</th><th>{{ t("admin.notify.error") }}</th>
+  </tr></thead>
+  <tbody>
+    {% for o in recent %}
+    <tr>
+      <td class="mono adm-id">{{ o.work_order_no }}</td>
+      <td>{{ o.event }}</td>
+      <td>{{ o.channel }}</td>
+      <td>{{ recipient_names.get(o.recipient_id, o.recipient_id) }}</td>
+      <td>{{ o.status }}</td>
+      <td class="mono num">{{ o.attempts }}</td>
+      {% set le = o.last_error or "" %}
+      <td class="adm-err"{% if le | length > 60 %} title="{{ le }}"{% endif %}>{{ le[:60] or "—" }}</td>
+    </tr>
+    {% endfor %}
+    {% if not recent %}
+    <tr><td colspan="7" class="form-hint">{{ t("admin.notify.outbox_empty") }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

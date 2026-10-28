@@ -1,0 +1,28 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 備品查詢(v1 = `inventory.html`)。料卡索引:搜尋列在 swap target 之外(打字不丟焦點),
+    過濾 chip / 清單 / 分頁在 `#inv-results` 內(chip 連結帶 q,HTMX 即時過濾後才不會過期)。
+    ★ 搜尋表單的 hx 屬性、hidden `low`、`autofocus` 同 v1。
+    ★ 結果碼(adminonly)走 v2 base 的 banner 區:類別由 `msg_banner` 供給,文案同 v1(本頁 = RFQ 那句)。
+    ★ admin「新增備品」:本頁任務是找料 ⇒ 描邊次鈕,不佔實填。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% set msg_text = {'adminonly': t('inv.rfq.adminonly')}.get(msg) if msg else none %}
+{% block title %}{{ t("nav.inventory") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.inventory") }}{% endblock %}
+{% block content %}
+<div class="listhead">
+  <form class="search" role="search" method="get" action="/app/inventory">
+    <input class="search__input" name="q" value="{{ q or '' }}" placeholder="{{ t('inv.search') }}" aria-label="{{ t('inv.search') }}" autofocus
+           hx-get="/app/inventory" hx-trigger="input changed delay:250ms, search"
+           hx-target="#inv-results" hx-include="closest form" hx-push-url="true">
+    {% if low %}<input type="hidden" name="low" value="1">{% endif %}
+    <button class="search__btn" type="submit" aria-label="{{ t('ui.search') }}">{{ icon("search") }}</button>
+  </form>
+  {% if is_admin %}
+  <a href="/app/inventory/new" class="btn btn--secondary listhead__new">{{ icon("plus") }}{{ t("inv.create.title") }}</a>
+  {% endif %}
+</div>
+
+<div id="inv-results">
+  {% include "v2/partials/inv_list.html" %}
+</div>
+{% endblock %}

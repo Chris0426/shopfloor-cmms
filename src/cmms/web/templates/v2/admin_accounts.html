@@ -1,0 +1,71 @@
+{% extends "v2/admin_base.html" %}
+{#- 新版介面 v2 帳號管理(v1 = `admin_accounts.html`;`/admin` 落地頁)。一張帳冊表:每列 = 一個帳號。
+    ★ 5 個 form 的 action / 欄位名、角色下拉的 `onchange="this.form.submit()"`、角色選項順序、
+      `data-suggest="person"`、`err` 原字串 banner(殼)逐字同 v1。
+    ★ 本頁主任務 = 新增帳號 ⇒ 表頭旁唯一實填;行內操作一律描邊小鈕。停用帳號 = 危險描邊。
+    ★ 守門(末位 admin / 自我停用)在伺服端(v1 同):擋下 ⇒ 303 `?err=` 紅 banner;表格本身不知道
+      「誰是自己」,故無前端 disabled。
+    ★ 狀態:啟用 = 綠色細框、字墨色;停用 = 中性細框。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% block title %}{{ t("admin.accounts.title") }} · {{ t("nav.admin") }}{% endblock %}
+{% block content %}
+<div class="adm-head">
+  <h2 class="adm-h2">{{ t("admin.accounts.title") }}</h2>
+  <a class="btn btn--primary" href="/admin/accounts/new">{{ icon("plus") }}{{ t("admin.accounts.new") }}</a>
+</div>
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.field.username") }}</th>
+      <th>{{ t("admin.field.name") }}</th>
+      <th>{{ t("admin.field.org") }}</th>
+      <th>{{ t("admin.field.role") }}</th>
+      <th>{{ t("admin.field.status") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr{% if not u.is_active %} class="is-flat"{% endif %}>
+      <td class="mono adm-id">{{ u.username }}</td>
+      <td>{{ u.display_name }}</td>
+      <td>{{ u.org }}</td>
+      <td>
+        <form method="post" action="/admin/accounts/{{ u.user_id }}/role" class="adm-inline">
+          <select class="adm-in" name="role" onchange="this.form.submit()" aria-label="{{ t('admin.field.role') }}">
+            <option value="engineer" {{ 'selected' if u.role == 'engineer' else '' }}>{{ t("admin.role.engineer") }}</option>
+            <option value="operator" {{ 'selected' if u.role == 'operator' else '' }}>{{ t("admin.role.operator") }}</option>
+            <option value="admin" {{ 'selected' if u.role == 'admin' else '' }}>{{ t("admin.role.admin") }}</option>
+          </select>
+        </form>
+      </td>
+      <td>
+        {% if u.is_active %}<span class="tag tag--ok-v1">{{ t("admin.status.active") }}</span>
+        {% else %}<span class="tag">{{ t("admin.status.inactive") }}</span>{% endif %}
+      </td>
+      <td>
+        <div class="adm-actions">
+          {% if u.is_active %}
+          <form method="post" action="/admin/accounts/{{ u.user_id }}/deactivate"><button type="submit" class="adm-btn adm-btn--danger">{{ t("admin.action.deactivate") }}</button></form>
+          {% else %}
+          <form method="post" action="/admin/accounts/{{ u.user_id }}/activate"><button type="submit" class="adm-btn">{{ t("admin.action.activate") }}</button></form>
+          {% endif %}
+          <form method="post" action="/admin/accounts/{{ u.user_id }}/assignee">
+            <input class="adm-in adm-in--person" name="assignee" value="{{ u.emaint_assignee or '' }}" placeholder="{{ t('admin.field.assignee') }}" size="12"
+                   aria-label="{{ t('admin.field.assignee') }}" data-suggest="person" autocomplete="off">
+            <button type="submit" class="adm-btn">{{ t("admin.action.save") }}</button>
+          </form>
+          <form method="post" action="/admin/accounts/{{ u.user_id }}/reset-password">
+            <input class="adm-in adm-in--pw" name="new_password" type="password" placeholder="{{ t('admin.action.newpw') }}" size="10"
+                   aria-label="{{ t('admin.action.newpw') }}" autocomplete="new-password">
+            <button type="submit" class="adm-btn">{{ t("admin.action.resetpw") }}</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

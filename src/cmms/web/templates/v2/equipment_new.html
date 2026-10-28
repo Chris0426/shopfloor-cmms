@@ -1,0 +1,73 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 新增設備(v1 = `equipment_new.html`,admin-only)。一張空白機台卡(同 `inventory_new` 體例)。
+    ★ 表單 action / 欄位名 / asset_type 無空選項 / EID `pattern` + `maxlength` / EID 規則說明同 v1;
+      負責人多值欄沿用 `multi_input`(app.js 綁 `[data-multi]`)。
+    ★ 廠區欄 v2 不預填字面值(必填,由 admin 輸入)。
+    ★ 結果碼 `?msg=err` 走 v2 base 的 banner 區(`MSG_BANNER` err → err)。
+    ★ 主動作 =「建立設備」實填;取消 = 描邊連結。欄位 = label + 全寬 input(label 文案 = placeholder 同一個 i18n key)。 -#}
+{% from "v2/partials/multi_input.html" import multi_input %}
+{% set msg_text = {'err': t('eq.msg.err')}.get(msg) if msg else none %}
+{% block title %}{{ t("eq.create.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("eq.create.title") }}{% endblock %}
+{% block content %}
+<form class="sheet sheet--form sheet--card item-form" method="post" action="/app/equipment/new">
+  <div class="item-grid">
+    {#- EID(PK)= 建立時必填、建立後不可變;須合 MES EID -#}
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.create.eidcode') }}</span>
+      <input class="form-input mono" name="asset_id" required pattern="EID-\d{5}" maxlength="9"
+             placeholder="{{ t('eq.create.eidcode') }}" title="{{ t('eq.create.eidhint') }}"
+             autocomplete="off"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.site') }}</span>
+      <input class="form-input" name="site" value="PLANT-1" required placeholder="{{ t('eq.site') }}"></label>
+    <label class="form-field item-grid__full"><span class="form-label">{{ t('eq.field.desc') }}</span>
+      <input class="form-input" name="description" required placeholder="{{ t('eq.field.desc') }}"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.type') }}</span>
+      <select class="form-input" name="asset_type" required>
+        {% for at in asset_types %}
+        <option value="{{ at.code }}">{{ at.label }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.subtype') }}</span>
+      <input class="form-input" name="asset_subtype" placeholder="{{ t('eq.subtype') }}"></label>
+    <div class="form-field item-grid__full"><span class="form-label">{{ t("eq.owner") }}</span>
+      {{ multi_input("owners", [], t("eq.owner"), t) }}</div>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.dept') }}</span>
+      <select class="form-input" name="department">
+        <option value="">{{ t('eq.dept') }}</option>
+        {% for d in departments %}
+        <option value="{{ d.code }}">{{ d.label }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.line') }}</span>
+      <select class="form-input" name="line">
+        <option value="">{{ t('eq.line') }}</option>
+        {% for ln in lines %}
+        <option value="{{ ln.code }}">{{ ln.label }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.manufacturer') }}</span>
+      <input class="form-input" name="manufacturer" placeholder="{{ t('eq.manufacturer') }}"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.model') }}</span>
+      <input class="form-input mono" name="model_no" placeholder="{{ t('eq.model') }}"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.serial') }}</span>
+      <input class="form-input mono" name="serial_no" placeholder="{{ t('eq.serial') }}"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.host') }}</span>
+      <input class="form-input" name="host_name" placeholder="{{ t('eq.host') }}"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.asset_ref') }}</span>
+      <input class="form-input" name="asset_ref" placeholder="{{ t('eq.asset_ref') }}"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.product') }}</span>
+      <input class="form-input" name="product" placeholder="{{ t('eq.product') }}"></label>
+    <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.psc') }}</span>
+      <input class="form-input" name="process_segment_class" placeholder="{{ t('eq.psc') }}"></label>
+    <label class="form-field item-grid__full"><span class="form-label">{{ t('eq.weblink') }}</span>
+      <input class="form-input" name="weblink" placeholder="{{ t('eq.weblink') }}"></label>
+    <label class="form-field item-grid__full"><span class="form-label">{{ t('eq.comments') }}</span>
+      <textarea class="form-input" name="comments" placeholder="{{ t('eq.comments') }}" rows="2"></textarea></label>
+  </div>
+  <p class="form-hint">{{ t("eq.create.eidhint") }}</p>
+  <div class="btnrow">
+    <button type="submit" class="btn btn--primary">{{ t("eq.create.submit") }}</button>
+    <a href="/app/equipment" class="btn btn--secondary">{{ t("action.cancel") }}</a>
+  </div>
+</form>
+{% endblock %}

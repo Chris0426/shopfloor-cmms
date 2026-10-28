@@ -1,0 +1,103 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 轉發到 MRQ(v1 = `work_order_forward.html`)。
+    ★ 兩張表單(送出 POST / 同批工單號 GET)的 action、hidden(`#fwd-wos` / idem_key)、欄位名、
+      readiness 誠實擋(未備 → 送出 disabled + `/app/settings#pat`)逐字同 v1。
+    ★ 送出失敗的 `?error=` 走 v2 base 的 banner 區:頂層把 `msg` 設成 `error`,類別由
+      `banners.PARAM_BANNER`(併進本頁 `msg_banner`)給,文案 = `wo.forward.err.<碼>`(同 v1)。
+      其餘四種(查無工單 / 已轉發過 / config / PAT 未備)是頁面狀態不是結果碼 ⇒ 留在頁內 banner。
+    ★ 換皮:label → 全寬輸入 → 提示;預覽表 = 日誌簿欄線表;送出 = 本頁唯一實填。 -#}
+{% set msg = error %}
+{% set msg_prefix = "wo.forward.err." %}
+{% block title %}{{ t("wo.forward.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("wo.forward.title") }}{% endblock %}
+{% block content %}
+<div class="sheet">
+{% if missing %}
+<div class="banner banner--warn banner--inpage" role="status">{{ t("wo.forward.missing") }}
+  {% for n in missing %}<span class="mono">WO-{{ n }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<p class="form-hint form-hint--lead">{{ t("wo.forward.intro") }}</p>
+
+{#- 已轉發過的 MRQ:不擋,只警示 -#}
+{% if forwarded %}
+<div class="banner banner--info banner--inpage" role="status">
+  {{ t("wo.forward.already") }}
+  {% for no, keys in forwarded.items() %}
+    {% for k in keys %}<span class="mono">{{ k }}</span>{% if not loop.last %}, {% endif %}{% endfor %}{% if not loop.last %}; {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not config_ready %}
+<div class="banner banner--warn banner--inpage" role="status">{{ t("wo.forward.config_missing") }}</div>
+{% endif %}
+{% if not pat_ready %}
+<div class="banner banner--warn banner--inpage" role="status">{{ t("wo.forward.pat_missing") }}
+  <a class="text-link" href="/app/settings#pat">{{ t("wo.forward.pat_link") }}</a>
+</div>
+{% endif %}
+
+<form class="sec" method="post" action="/app/work-orders/{{ work_order_no }}/forward">
+  <input type="hidden" id="fwd-wos" name="wos" value="{{ wos_raw }}">
+  <input type="hidden" name="idem_key" value="{{ idem_key }}">
+
+  <div class="form-row">
+    <label class="form-label" for="fwd-summary">{{ t("wo.forward.summary") }}</label>
+    <textarea id="fwd-summary" name="summary" rows="2" class="form-input" required>{{ summary }}</textarea>
+  </div>
+
+  {% include "v2/partials/forward_description.html" %}
+
+  <h2 class="sec__h">{{ t("wo.forward.preview") }}</h2>
+  {% if details %}
+  <table class="grid-table">
+    <thead>
+      <tr>
+        <th>{{ t("wo.forward.col_wo") }}</th>
+        <th>EID</th>
+        <th class="num">{{ t("wo.forward.col_notes") }}</th>
+        <th class="num">{{ t("wo.forward.col_photos") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in details %}
+      {% set c = counts.get(d.wo.work_order_no) %}
+      <tr>
+        <td><a class="chip chip--id" href="/app/work-orders/{{ d.wo.work_order_no }}">WO-{{ d.wo.work_order_no }}</a></td>
+        <td class="mono">{{ d.eid }}</td>
+        <td class="num">{{ c.note_count if c else "—" }}</td>
+        <td class="num">{{ c.photo_count if c else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if preview %}
+  <p class="form-hint">
+    {{ t("wo.forward.totals") }}: <strong>{{ preview.total_comments }}</strong> · <strong>{{ preview.total_photos }}</strong>
+  </p>
+  {% endif %}
+  {% else %}
+  <p class="form-hint">{{ t("wo.forward.no_wos") }}</p>
+  {% endif %}
+
+  <div class="btnrow">
+    <button type="submit" class="btn btn--primary" {% if not ready or not details %}disabled{% endif %}>
+      {{ t("wo.forward.submit") }}
+    </button>
+  </div>
+</form>
+
+{#- 同批其他工單號 + 更新預覽(GET 重載同頁) -#}
+<form class="sec" method="get" action="/app/work-orders/{{ work_order_no }}/forward">
+  <h2 class="sec__h">{{ t("wo.forward.wos") }}</h2>
+  <div class="btnrow">
+    <input class="form-input form-input--grow mono" name="wos" value="{{ wos_raw }}" placeholder="{{ t('wo.forward.wos_ph') }}"
+           aria-label="{{ t('wo.forward.wos') }}" autocomplete="off">
+    <button type="submit" class="btn btn--secondary">{{ t("wo.forward.update_preview") }}</button>
+  </div>
+  <p class="form-hint">{{ t("wo.forward.wos_hint") }}</p>
+</form>
+</div>
+{% endblock %}

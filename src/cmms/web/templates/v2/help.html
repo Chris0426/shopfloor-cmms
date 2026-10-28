@@ -1,0 +1,39 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 說明中心索引(v1 = `help.html`)。一張說明紙,由上而下:
+    SOP 目錄(每份一行:標題 / 濃縮步驟 / 更新日,整行連到 `/app/help/<slug>`)→ 頁底回饋表單。
+    ★ 目錄順序 = `help_docs.HELP_DOCS` 註冊順序;標題 / 摘要 / 更新日取註冊表(與 v1 同源,不經 i18n)。
+    ★ 回饋表單同 v1:`POST /app/help/feedback`、單一欄位 `message`、rows=3、placeholder 與送出鈕文案;
+      空白由 route 擋(303 `?fb=empty`),前端不加 required(v1 沒有)。本頁唯一寫入動作 ⇒ 送出鈕 = 唯一實填。
+    ★ 結果碼 `?fb=`(非 msg 參數):頂層 `set msg = fb` + 本頁的 fb → 類別對照,交給 v2 殼的 banner 區畫。
+      值域同 v1:`ok` 綠 / `empty` 紅;其餘碼 = 殼的「未知碼 warn + 原碼」(不靜默)。 -#}
+{% set msg = fb %}
+{% set msg_banner = {'ok': 'ok', 'empty': 'err'} %}
+{% set msg_text = t('help.feedback.ok') if fb == 'ok' else (t('help.feedback.err.empty') if fb == 'empty' else none) %}
+{% block title %}{{ t("help.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("help.title") }}{% endblock %}
+{% block content %}
+<div class="sheet sheet--card sheet--doc">
+
+<ol class="help-list">
+  {% for doc in docs %}
+  <li>
+    <a class="help-card" href="/app/help/{{ doc.slug }}">
+      <span class="help-card__title">{{ doc.title }}</span>
+      <span class="help-card__summary">{{ doc.summary }}</span>
+      <span class="help-card__meta">{{ t("help.updated") }} {{ doc.updated }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ol>
+
+<section class="sec help-fb">
+  <h2 class="sec__h">{{ t("help.feedback.title") }}</h2>
+  <form class="settings-form" method="post" action="/app/help/feedback">
+    <textarea class="form-input" name="message" rows="3" placeholder="{{ t('help.feedback.placeholder') }}"
+              aria-label="{{ t('help.feedback.title') }}"></textarea>
+    <div class="btnrow"><button type="submit" class="btn btn--primary">{{ t("help.feedback.submit") }}</button></div>
+  </form>
+</section>
+
+</div>
+{% endblock %}

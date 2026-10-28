@@ -1,0 +1,70 @@
+{#- 新版介面 v2 工單佇列結果區塊(v1 = `partials/wo_list.html`)。整頁 include 與 HTMX 即時過濾
+    都渲染這份(`_render` 在 v2 下自動解析到本檔)。
+    ★ 資料、連結、hx 屬性逐字同 v1:chips 連結帶齊 scope / tab / q 三軸,切一軸不清掉另一軸。
+    ★ 版面:日誌簿的一行 = 裝訂邊 / 3px 狀態條 / 內容 / 右緣時間;維修中浮起(`is-live`)、
+      結案 / 取消壓平(`is-flat`)並蓋章;色彩只住狀態條與章。
+    ★ 截斷一律 `.cut` + 同字 `title`。 -#}
+
+<div class="filterbar">
+  {#- 範圍(我的 / 全部)‖ 狀態群組(活單 … 全部) -#}
+  <div class="chips chips--wrap">
+    {% for key, label in [('mine','scope.mine'), ('all','scope.all')] %}
+    <a class="chip{{ ' is-active' if scope == key else '' }}"{% if scope == key %} aria-current="true"{% endif %}
+       href="/app/work-orders?scope={{ key }}&tab={{ tab }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ t(label) }}</a>
+    {% endfor %}
+    <span class="chips__div" aria-hidden="true"></span>
+    {% for key, label in [('active','wo.filter.active'), ('inprogress','wo.filter.inprogress'), ('waiting','wo.filter.waiting'), ('done','wo.filter.done'), ('cancelled','wo.filter.cancelled'), ('all','wo.filter.all')] %}
+    <a class="chip{{ ' is-active' if tab == key else '' }}"{% if tab == key %} aria-current="true"{% endif %}
+       href="/app/work-orders?scope={{ scope }}&tab={{ key }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ t(label) }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if work_orders %}
+<div class="ledger ledger--list wo-list">
+  {% for wo in work_orders %}
+  {% set css = status_css(wo.status) %}
+  {% set skey = wo_status_key(wo.status, wo.work_type) %}
+  {% set flat = css in ('done', 'muted') %}
+  {#- 浮起 = 機台正在修:處理中,或報修單一開單即「維修中」 -#}
+  {% set live = wo.status == 'IN_PROGRESS' or skey == 'status.OPEN.reactive' %}
+  {% set aname = asset_names.get(wo.asset_id) if asset_names else None %}
+  {% set anames = assignee_names.get(wo.work_order_no) if assignee_names else None %}
+  {% set brief_txt = wo.brief_description or "—" %}
+  {% set asset_txt %}{{ wo.asset_id }}{% if aname %} · {{ aname }}{% endif %}{% endset %}
+  {% set owner_txt %}{{ t("wo.owner") }} {{ anames|join("、") if anames else (wo.assigned_person or wo.assigned_vendor or t("wo.unassigned")) }}{% endset %}
+  <div class="ledger__row ledger__row--{{ css }}{{ ' is-live' if live else '' }}{{ ' is-flat' if flat else '' }}">
+    <span class="ledger__strip" aria-hidden="true"></span>
+    <a class="ledger__link" href="/app/work-orders/{{ wo.work_order_no }}">
+      <span class="ledger__body">
+        <span class="ln ln--head">
+          <span class="wo-no">WO-{{ wo.work_order_no }}</span>
+          {% if flat %}
+          <span class="state-word stamp stamp--ink {{ 'stamp--round' if css == 'done' else 'stamp--square' }}">{{ t(skey) }}</span>
+          {% else %}
+          <span class="state-word">{{ t(skey) }}</span>
+          {% endif %}
+          {% if wo.status == "ON_HOLD" and wo.hold_reason %}<span class="hold-reason">{{ t("holdreason." ~ wo.hold_reason) }}</span>{% endif %}
+          <span class="tag tag--{{ wtype_css(wo.work_type) }}">{{ wo.work_type }}</span>
+          {#- 停機時數(有值才出,同 v1) -#}
+          {% if wo.downtime_minutes %}<span class="tag">{{ t("wo.down") }} {{ wo.downtime_minutes // 60 }}h{{ "%02d"|format(wo.downtime_minutes % 60) }}m</span>{% endif %}
+        </span>
+        <span class="ln ln--brief"><span class="brief cut" title="{{ brief_txt }}">{{ brief_txt }}</span></span>
+        <span class="ln ln--meta"><span class="meta cut" title="{{ asset_txt|trim }}">{{ asset_txt|trim }}</span><span class="meta meta--owner cut" title="{{ owner_txt|trim }}">{{ owner_txt|trim }}</span></span>
+      </span>
+      <span class="ledger__time">
+        <span class="date">{{ wo.opened_date }}</span>
+        <span class="date-k">{{ t("wo.opened") }}</span>
+      </span>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+{% elif scope == 'mine' %}
+<p class="empty">{{ t("scope.empty") }}
+  <a class="text-link" href="/app/work-orders?scope=all{% if tab and tab != 'all' %}&tab={{ tab }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ t("scope.all") }} →</a>
+</p>
+{% else %}
+<p class="empty">{{ t("wo.empty") }}</p>
+{% endif %}
+{% include "v2/partials/pager.html" %}

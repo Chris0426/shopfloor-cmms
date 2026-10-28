@@ -1,0 +1,24 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 工單佇列(v1 = `work_orders.html`)。
+    ★ 搜尋框刻意留在 swap target 之外(打字時整塊被換掉會丟焦點);hidden 隨行軸、hx 屬性、
+      「長度 ≥2 才觸發」條件逐字同 v1。
+    ★ scope / tab chips 在 swap target 內(由 partial 渲染),即時過濾後連結裡的 q 才會跟著更新。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% block title %}{{ t("wo.queue.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("wo.queue.title") }}{% endblock %}
+{% block content %}
+<form class="search" role="search" method="get" action="/app/work-orders">
+  {#- 全表多欄 ilike 掃描:單字元不觸發(0 字 = 清除照常),同 v1 -#}
+  <input class="search__input" name="q" value="{{ q or '' }}" placeholder="{{ t('wo.search') }}" aria-label="{{ t('wo.search') }}"
+         hx-get="/app/work-orders"
+         hx-trigger="input[target.value.length==0||target.value.length>=2] changed delay:250ms, search"
+         hx-target="#wo-results" hx-include="closest form" hx-push-url="true">
+  <input type="hidden" name="scope" value="{{ scope }}">
+  {% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}
+  <button class="search__btn" type="submit" aria-label="{{ t('ui.search') }}">{{ icon("search") }}</button>
+</form>
+
+<div id="wo-results">
+  {% include "v2/partials/wo_list.html" %}
+</div>
+{% endblock %}

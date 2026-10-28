@@ -1,0 +1,50 @@
+{#- 新版介面 v2 備品結果區塊(v1 = `partials/inv_list.html`;整頁 include + HTMX 即時過濾共用)。
+    ★ chip 連結(帶 q)、admin 且 low 才出現的批次詢價、供應商捷徑、說明句、卡片連結、縮圖來源、
+      在庫 / 儲位的顯示規則、分頁同 v1。
+    ★ 料卡索引:每列 = 縮圖 + 料號 + 品名 + 儲位 + 右緣在庫;在庫數字字級大於料號、墨色不上色;
+      「低於再訂購點」紅籤只住細框。
+    ★ 過濾 chip 一行,手機橫向捲動不換行。 -#}
+{% from "v2/partials/icons.html" import icon %}
+<div class="chips inv-filters">
+  <a class="chip{{ ' is-active' if not low else '' }}" href="/app/inventory{% if q %}?q={{ q|urlencode }}{% endif %}"{% if not low %} aria-current="true"{% endif %}>{{ t("wo.filter.all") }}</a>
+  <a class="chip{{ ' is-active' if low else '' }}" href="/app/inventory?low=1{% if q %}&q={{ q|urlencode }}{% endif %}"{% if low %} aria-current="true"{% endif %}>{{ t("inv.low_filter") }}</a>
+  {% if is_admin and low %}
+  <a class="chip chip--edge-primary" href="/app/inventory-rfq">{{ t("inv.rfq_batch") }}</a>
+  {% endif %}
+  <span class="chips__div" aria-hidden="true"></span>
+  <a class="chip" href="/app/suppliers">{{ t("nav.suppliers") }}</a>
+</div>
+{% if not q and not low %}<p class="form-hint list-hint">{{ t("inv.browse_hint") }}</p>{% endif %}
+{% if items %}
+<div class="ledger ledger--inv">
+  {% for it in items %}
+  {#- 紅籤 = 低於再訂購點(與 ?low=1 同一條語意) -#}
+  {% set restock = it.reorder_point is not none and it.quantity_on_hand is not none and it.quantity_on_hand < it.reorder_point %}
+  {% set nm = it.name or it.description or "—" %}
+  <a class="inv-row" href="/app/inventory/{{ it.item_code }}">
+    <span class="inv-row__thumb">
+      {% if thumbs is defined and thumbs.get(it.item_code) %}
+      <img src="{{ thumbs[it.item_code] }}" alt="" loading="lazy">
+      {% else %}
+      {{ icon("box", "icon") }}
+      {% endif %}
+    </span>
+    <span class="inv-row__body">
+      <span class="ln ln--head">
+        <span class="mono inv-code">{{ it.item_code }}</span>
+        {% if restock %}<span class="tag tag--restock">{{ t("inv.reorder") }}</span>{% endif %}
+      </span>
+      <span class="inv-name cut" title="{{ nm }}">{{ nm }}</span>
+      <span class="inv-loc"><span class="inv-loc__k">{{ t("inv.location") }}</span>{{ it.bin_location or "—" }}</span>
+    </span>
+    <span class="inv-row__qty">
+      <span class="qty-k">{{ t("inv.onhand") }}</span>
+      <span class="qty-v">{{ it.quantity_on_hand | int if it.quantity_on_hand is not none else "—" }}</span>
+    </span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">{{ t("inv.empty") }}</p>
+{% endif %}
+{% include "v2/partials/pager.html" %}

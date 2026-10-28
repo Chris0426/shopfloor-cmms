@@ -1,0 +1,90 @@
+{% extends "v2/admin_base.html" %}
+{#- 新版介面 v2 活動紀錄(v1 = `admin_audit.html`)。來源 tabs + actor 子字串 + 上限 → 逆時序事件帳。唯讀。
+    ★ 過濾 form(GET `/admin/audit`、hidden `source`、`actor`、`limit` min 1 / max 200)、來源 tab 連結(保留 actor)、
+      五種事件的內容(狀態轉移 / 日誌更正 / 庫存異動 / 提案裁決 / 範本細項軟刪)與各自的 WO / 品項 / 設備 / 任務連結
+      逐字同 v1。零實填(讀取頁)。時間 = 台北時間(`local_dt`,同 v1)。
+    ★ 色:稽核刪除 = 動作記錄不是錯誤 ⇒ 中性章(v1 紅);庫存負異動 = 墨色數字帶負號、不上色(v1 紅 badge);
+      庫存正異動 = 綠色只住細框。工單狀態 / 日誌類型 / 等待原因 = 3px 狀態條(`--st-*` 只住條)。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% block title %}{{ t("admin.audit.title") }} · {{ t("nav.admin") }}{% endblock %}
+{% block content %}
+<div class="adm-head"><h2 class="adm-h2">{{ t("admin.audit.title") }}</h2></div>
+<p class="form-hint form-hint--lead">{{ t("admin.audit.hint") }}</p>
+
+{#- 過濾列:來源分頁(保留 actor)+ actor 子字串 + 每源上限 -#}
+<form method="get" action="/admin/audit" class="adm-filter adm-filter--split">
+  <nav class="adm-tabs" aria-label="{{ t('admin.audit.title') }}">
+    <a href="/admin/audit?source=all{% if actor %}&actor={{ actor }}{% endif %}"
+       {% if source == 'all' %}class="is-active" aria-current="page"{% endif %}>{{ t("admin.audit.src.all") }}</a>
+    {% for s in sources %}
+    <a href="/admin/audit?source={{ s }}{% if actor %}&actor={{ actor }}{% endif %}"
+       {% if source == s %}class="is-active" aria-current="page"{% endif %}>{{ t("admin.audit.src." ~ s) }}</a>
+    {% endfor %}
+  </nav>
+  <span class="adm-inline">
+    <input type="hidden" name="source" value="{{ source }}">
+    <input class="adm-in adm-in--person" type="text" name="actor" value="{{ actor }}" placeholder="{{ t('admin.audit.actor_ph') }}"
+           aria-label="{{ t('admin.audit.actor_ph') }}">
+    <input class="adm-in adm-in--num" type="number" name="limit" value="{{ limit }}" min="1" max="200"
+           aria-label="{{ t('admin.audit.filter') }}">
+    <button type="submit" class="adm-btn">{{ t("admin.audit.filter") }}</button>
+  </span>
+</form>
+
+{% if events %}
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.audit.when") }}</th>
+      <th>{{ t("admin.audit.who") }}</th>
+      <th>{{ t("admin.audit.what") }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    {% set o = e.o %}
+    <tr>
+      <td class="mono adm-date">{{ e.when|local_dt }}</td>
+      <td>
+        {% set who = e.who or "" %}
+        {#- 作者:agent 身分 = 赤陶字 + 星芒(與工單時間線同一套 `.author`);全文照印(含 `agent:` / `human:` 前綴,同 v1) -#}
+        <span class="author adm-who{{ ' author--agent' if who.startswith('agent:') else '' }}">{% if who.startswith('agent:') %}{{ icon("spark", "icon-xs") }}{% endif %}{{ who or "—" }}</span>
+      </td>
+      <td><div class="adm-what">
+        {% if e.kind == "status" %}
+        <span class="tag">{{ t("admin.audit.src.status") }}</span>
+        <a class="chip chip--id mono" href="/app/work-orders/{{ o.work_order_no }}">WO-{{ o.work_order_no }}</a>
+        <span class="mono">{{ o.from_status or "∅" }} → </span>
+        <span class="tag adm-st adm-st--{{ status_css(o.to_status) }}">{{ t("status." ~ o.to_status) }}</span>
+        {% if o.hold_reason %}<span class="tag adm-st adm-st--hold">{{ t("holdreason." ~ o.hold_reason) }}</span>{% endif %}
+        {% elif e.kind == "note" %}
+        <span class="tag">{{ t("admin.audit.note_edited") }}</span>
+        <a class="chip chip--id mono" href="/app/work-orders/{{ o.work_order_no }}">WO-{{ o.work_order_no }}</a>
+        <span class="tag adm-st adm-st--{{ note_type_css(o.entry_type) }}">{{ t("notetype." ~ o.entry_type) }}</span>
+        {% elif e.kind == "stock" %}
+        <span class="tag{{ ' tag--ok-v1' if o.qty_delta >= 0 else '' }}">{{ o.kind }}</span>
+        <a class="chip chip--id mono" href="/app/inventory/{{ o.item_code }}">{{ o.item_code }}</a>
+        <span class="mono adm-delta">{{ "%+g"|format(o.qty_delta) }}</span>
+        {% if o.work_order_no %}<a class="chip chip--id mono" href="/app/work-orders/{{ o.work_order_no }}">WO-{{ o.work_order_no }}</a>{% endif %}
+        {% if o.charge_target_asset_id %}<a class="chip chip--id mono" href="/app/equipment/{{ o.charge_target_asset_id }}">{{ o.charge_target_asset_id }}</a>{% endif %}
+        {% elif e.kind == "proposal" %}
+        <span class="tag tag--prop-{{ 'done' if o.status == 'CONFIRMED' else ('red' if o.status == 'REJECTED' else 'muted') }}">{{ o.status }}</span>
+        <span>{{ t("admin.prop.op." ~ o.operation) }}</span>
+        {% if o.params.get('work_order_no') %}<a class="chip chip--id mono" href="/app/work-orders/{{ o.params['work_order_no'] }}">WO-{{ o.params['work_order_no'] }}</a>{% endif %}
+        {% if o.params.get('item_code') %}<a class="chip chip--id mono" href="/app/inventory/{{ o.params['item_code'] }}">{{ o.params['item_code'] }}</a>{% endif %}
+        {% elif e.kind == "deletion" %}
+        <span class="stamp stamp--square adm-stamp">{{ t("admin.audit." ~ o.kind ~ "_deleted") }}</span>
+        <a class="chip chip--id mono" href="/admin/pm/{{ o.task_no }}">{{ o.task_no }}</a>
+        <span>{{ o.detail }}</span>
+        {% endif %}
+      </div></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty">{{ t("admin.audit.empty") }}</p>
+{% endif %}
+{% endblock %}

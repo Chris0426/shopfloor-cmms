@@ -1,0 +1,16 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 SOP 內頁(v1 = `help_doc.html`)。殼 + 一張說明紙 + include 片段。
+    ★ 片段(`templates/help/*.html`)是內容、不分版本:v1 與 v2 include 同一個檔,不改。
+      片段用 app 原生 class(`.sop-*` / `.mono` …)畫的示意畫面,在 v2 殼裡由 v2.css 的「SOP 片段層」
+      以 v2 token 重寫 ⇒ 示意圖長成 v2 真頁的樣子;片段引用的 v1 token 名由 v2.css 在 `.sop` 範圍內接到 v2 token。
+    ★ 更新日一行 + 非 zh-TW 的「僅中文」提示同 v1。
+    ★ include 的是變數(`doc.template`,註冊表給的相對路徑),不經 `_render` 解析 —— 片段沒有 v2 同名檔,原樣 include。 -#}
+{% block title %}{{ doc.title }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ doc.title }}{% endblock %}
+{% block content %}
+<div class="sheet sheet--card sheet--doc">
+  <p class="form-hint help-doc__updated">{{ t("help.updated") }} {{ doc.updated }}</p>
+  {% if locale != 'zh-TW' %}<p class="form-hint sop-zh-only">{{ t("help.zh_only") }}</p>{% endif %}
+  {% include doc.template %}
+</div>
+{% endblock %}

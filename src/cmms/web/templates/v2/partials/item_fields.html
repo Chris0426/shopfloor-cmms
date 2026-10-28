@@ -1,0 +1,54 @@
+{#- 新版介面 v2 品項主檔欄位組(v1 = `partials/item_fields.html`;單一來源:admin 編輯 / engineer 提案 /
+    新增備品三處共用,避免漂移)。
+    ★ 欄位名、值的格式化(`'%g'|format`)、`type` / `min` / `step` / `inputmode`、供應商自動完成
+      (`data-suggest="supplier"` + `data-fill="edit-org-id"`)、唯讀 org 代碼欄(`id="edit-org-id"` + title)、
+      儲位嚴格 combobox(admin 才有 quick-add 端點)同 v1。
+    ★ 換皮:每欄加可見 label(文案 = 原 placeholder 的同一個 i18n key,placeholder 照留);
+      欄寬以格線表達(全寬 / 半 / 三分之一),零 inline style。
+    ★ 常備 / 已淘汰 = 兩顆獨立勾選(`is_stocked` / `is_obsolete`,同 v1),畫成自繪方框的選項 chip。 -#}
+{% from "v2/partials/combobox.html" import combobox %}
+<div class="item-grid">
+  <label class="form-field item-grid__full"><span class="form-label">{{ t('inv.f.name') }}</span>
+    <input class="form-input" name="name" value="{{ item.name or '' }}" placeholder="{{ t('inv.f.name') }}"></label>
+  <label class="form-field item-grid__full"><span class="form-label">{{ t('inv.f.desc') }}</span>
+    <input class="form-input" name="description" value="{{ item.description or '' }}" placeholder="{{ t('inv.f.desc') }}"></label>
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('inv.vpart') }}</span>
+    <input class="form-input mono" name="vendor_part_no" value="{{ item.vendor_part_no or '' }}" placeholder="{{ t('inv.vpart') }}"></label>
+  {#- 儲位 = 受控詞彙 combobox(值必為 active storage_bin 或空);admin 可下拉末端 quick-add 新櫃位 -#}
+  <div class="form-field item-grid__half"><span class="form-label">{{ t('inv.location') }}</span>
+    {{ combobox('bin_location', item.bin_location, bins, t, 'bin', 'efc-combo--wide',
+                t('inv.location'), t('inv.bin.nomatch'), '',
+                ('/app/inventory/bins' if is_admin else ''), t('inv.bin.add')) }}</div>
+  <label class="form-field item-grid__third"><span class="form-label">{{ t('inv.reorderpt') }}</span>
+    <input class="form-input" name="reorder_point" value="{{ '%g'|format(item.reorder_point|float) if item.reorder_point is not none else '' }}" type="number" min="0" step="any" inputmode="decimal" placeholder="{{ t('inv.reorderpt') }}"></label>
+  <label class="form-field item-grid__third"><span class="form-label">{{ t('inv.reorderqty') }}</span>
+    <input class="form-input" name="reorder_quantity" value="{{ '%g'|format(item.reorder_quantity|float) if item.reorder_quantity is not none else '' }}" type="number" min="0" step="any" inputmode="decimal" placeholder="{{ t('inv.reorderqty') }}"></label>
+  <label class="form-field item-grid__third"><span class="form-label">{{ t('inv.f.lead') }}</span>
+    <input class="form-input" name="lead_time_weeks" value="{{ item.lead_time_weeks if item.lead_time_weeks is not none else '' }}" type="number" min="0" step="1" inputmode="numeric" placeholder="{{ t('inv.f.lead') }}"></label>
+  <label class="form-field item-grid__third"><span class="form-label">{{ t('inv.f.cost') }}</span>
+    <input class="form-input" name="unit_cost" value="{{ '%g'|format(item.unit_cost|float) if item.unit_cost is not none else '' }}" type="number" min="0" step="any" inputmode="decimal" placeholder="{{ t('inv.f.cost') }}"></label>
+  {#- 供應商欄自動完成既有機構;選取後把 org_id 帶入下方唯讀代碼欄(data-fill) -#}
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('inv.supplier') }}</span>
+    <input class="form-input" name="supplier" value="{{ item.supplier or '' }}" placeholder="{{ t('inv.supplier') }}"
+           data-suggest="supplier" data-fill="edit-org-id" autocomplete="off"></label>
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('inv.f.org') }}</span>
+    <input class="form-input form-input--readonly mono" name="supplier_org_id" id="edit-org-id" value="{{ item.supplier_org_id or '' }}" readonly
+           placeholder="{{ t('inv.f.org') }}" title="{{ t('inv.f.org.readonly') }}"></label>
+  <label class="form-field item-grid__full"><span class="form-label">{{ t('inv.f.weblink') }}</span>
+    <input class="form-input" name="weblink" value="{{ item.weblink or '' }}" placeholder="{{ t('inv.f.weblink') }}"></label>
+  <label class="form-field item-grid__full"><span class="form-label">{{ t('inv.f.comment') }}</span>
+    <input class="form-input" name="comment" value="{{ item.comment or '' }}" placeholder="{{ t('inv.f.comment') }}"></label>
+  <div class="form-field item-grid__full" role="group" aria-label="{{ t('inv.f.stock_state') }}">
+    <span class="form-label">{{ t('inv.f.stock_state') }}</span>
+    <div class="opt-chips">
+      <label class="opt-chip opt-chip--check">
+        <input type="checkbox" name="is_stocked" value="true" {% if item.is_stocked %}checked{% endif %}>
+        <span>{{ t("inv.f.stocked") }}</span>
+      </label>
+      <label class="opt-chip opt-chip--check">
+        <input type="checkbox" name="is_obsolete" value="true" {% if item.is_obsolete %}checked{% endif %}>
+        <span>{{ t("inv.obsolete") }}</span>
+      </label>
+    </div>
+  </div>
+</div>

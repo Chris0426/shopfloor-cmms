@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import calendar
 import contextlib
+import hashlib
 import logging
 import secrets
 import uuid
@@ -87,6 +88,7 @@ from cmms.domain.work_order.service import (
 from cmms.domain.work_order.transform import TAIPEI
 from cmms.email import EmailError, get_email_sender, smtp_configured
 from cmms.web.assistant_render import render_reply
+from cmms.web.banners import banner_map_for
 from cmms.web.export import (
     DATASETS,
     ExportFilterError,
@@ -108,9 +110,25 @@ from cmms.web.i18n import (
     wtype_css,
 )
 from cmms.web.timefmt import local_date, local_dt
+from cmms.web.ui_version import resolve_template, ui_version
 
 _WEB_DIR = Path(__file__).parent
+
+
+def _compute_static_v() -> str:
+    """對模板引用的靜態程式碼資產(app.css/app.js/zxing.min.js/v2.css)算內容雜湊,
+    供 cache-busting query(`?v=`)。任一檔異動即刷新 → 部署後瀏覽器不吃舊快取。
+    md5 取前 10 碼(非密碼學用途,僅指紋);讀不到檔則回退固定值,絕不阻擋啟動。
+    """
+    digest = hashlib.md5()  # noqa: S324 — 僅作內容指紋,非安全用途
+    for name in ("app.css", "app.js", "zxing.min.js", "v2.css"):
+        with contextlib.suppress(OSError):
+            digest.update((_WEB_DIR / "static" / name).read_bytes())
+    return digest.hexdigest()[:10]
+
+
 templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
+templates.env.globals["static_v"] = _compute_static_v()
 templates.env.globals["status_css"] = status_css
 templates.env.globals["wo_status_key"] = wo_status_key
 templates.env.globals["note_type_css"] = note_type_css
@@ -275,6 +293,7 @@ def _render(
 ) -> HTMLResponse:
     """組 base context(t / locale / nav / 使用者)並渲染。t 綁定當前 locale。"""
     settings = get_settings()
+    ui = ui_version(request)
     ctx: dict[str, Any] = {
         "t": lambda key: translate(key, locale),
         "locale": locale,
@@ -297,9 +316,13 @@ def _render(
         "ui_hide_jira": settings.ui_hide_jira,
         # 錄影 / 對照實例:整個不渲染助理 dock + FAB(CMMS_UI_HIDE_ASSISTANT)。
         "ui_hide_assistant": settings.ui_hide_assistant,
+        # 新版介面 v2:`msg_banner` = 該頁 msg → banner 類別(banners.py)。
+        "ui_version": ui,
+        "msg_banner": banner_map_for(name),
         **extra,
     }
-    return templates.TemplateResponse(request, name, ctx)
+    # ★ 全 repo 唯一的 v1/v2 解析點:v2 且 `v2/<name>` 存在且非例外 ⇒ v2,否則回落 v1。
+    return templates.TemplateResponse(request, resolve_template(templates.env, name, ui), ctx)
 
 
 async def _upload_photos(

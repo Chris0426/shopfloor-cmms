@@ -1,0 +1,86 @@
+{% extends "v2/admin_base.html" %}
+{#- 新版介面 v2 附件治理(v1 = `admin_attachments.html`)。各 owner_type 現存數 → 最近上傳 → 已軟刪(可還原)。
+    ★ 軟刪 form 的 `onsubmit="return confirm(…)"`、還原 form、兩張表的欄位與空狀態文案、
+      R2 物件永不硬刪的說明逐字同 v1。零實填(治理讀取頁)。
+    ★ 色:軟刪 = 危險描邊;還原 = 綠描邊(色只住框)。 -#}
+{% block title %}{{ t("admin.att.title") }} · {{ t("nav.admin") }}{% endblock %}
+{% block content %}
+<div class="adm-head"><h2 class="adm-h2">{{ t("admin.att.title") }}</h2></div>
+
+{#- 統計:各 owner_type 現存數 -#}
+{% if counts %}
+<div class="adm-stats">
+  {% for owner_type, n in counts.items() %}
+  <div class="adm-stat"><span class="adm-stat__n">{{ n }}</span><span class="adm-stat__l mono">{{ owner_type }}</span></div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="form-hint">{{ t("admin.att.empty_recent") }}</p>
+{% endif %}
+
+<h3 class="adm-h3">{{ t("admin.att.recent") }}</h3>
+{% if recent %}
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.att.file") }}</th>
+      <th>{{ t("admin.att.owner") }}</th>
+      <th>{{ t("admin.att.by") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in recent %}
+    <tr>
+      <td class="mono adm-wrapid">{{ a.original_filename or a.r2_key }}</td>
+      <td class="mono">{{ a.owner_type }} · {{ a.owner_id }}</td>
+      <td class="mono">{{ a.created_by or "—" }}</td>
+      <td class="adm-cell--act">
+        <form method="post" action="/admin/attachments/{{ a.id }}/delete" class="adm-inline"
+              onsubmit="return confirm('{{ t("admin.att.delete_confirm") }}');">
+          <button type="submit" class="adm-btn adm-btn--danger">{{ t("admin.att.delete") }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty">{{ t("admin.att.empty_recent") }}</p>
+{% endif %}
+
+<h3 class="adm-h3">{{ t("admin.att.deleted") }}</h3>
+<p class="form-hint">{{ t("admin.att.r2_hint") }}</p>
+{% if deleted %}
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.att.file") }}</th>
+      <th>{{ t("admin.att.owner") }}</th>
+      <th>{{ t("admin.att.by") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in deleted %}
+    <tr class="is-flat">
+      <td class="mono adm-wrapid">{{ a.original_filename or a.r2_key }}</td>
+      <td class="mono">{{ a.owner_type }} · {{ a.owner_id }}</td>
+      <td class="mono">{{ a.updated_by or a.created_by or "—" }}</td>
+      <td class="adm-cell--act">
+        <form method="post" action="/admin/attachments/{{ a.id }}/restore" class="adm-inline">
+          <button type="submit" class="adm-btn adm-btn--ok">{{ t("admin.att.restore") }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty">{{ t("admin.att.none_deleted") }}</p>
+{% endif %}
+{% endblock %}

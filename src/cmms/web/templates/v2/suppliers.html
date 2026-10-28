@@ -1,0 +1,27 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 供應商查詢(v1 = `suppliers.html`)。機構索引:搜尋列在 swap target 之外,清單 / 分頁在
+    `#sup-results` 內。機構層所有登入 engineer 可見;個人 PII 不在本頁。
+    ★ 搜尋表單的 hx 屬性(含 `hx-push-url="true"`)同 v1。
+    ★ 結果碼 `adminonly`(非 admin 誤入新增入口)走 v2 base 的 banner 區(v1 = info)。
+    ★ admin「新增供應商」= 描邊入口(本頁不放實填主鈕)。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% set msg_text = {'adminonly': t('sup.msg.adminonly.create')}.get(msg) if msg else none %}
+{% block title %}{{ t("nav.suppliers") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.suppliers") }}{% endblock %}
+{% block content %}
+<div class="listhead">
+  <form class="search" role="search" method="get" action="/app/suppliers">
+    <input class="search__input" name="q" value="{{ q or '' }}" placeholder="{{ t('sup.search') }}" aria-label="{{ t('sup.search') }}" autofocus
+           hx-get="/app/suppliers" hx-trigger="input changed delay:250ms, search"
+           hx-target="#sup-results" hx-include="closest form" hx-push-url="true">
+    <button class="search__btn" type="submit" aria-label="{{ t('ui.search') }}">{{ icon("search") }}</button>
+  </form>
+  {% if is_admin %}
+  <a href="/app/suppliers/new" class="btn btn--secondary listhead__new">{{ icon("plus") }}{{ t("sup.create.title") }}</a>
+  {% endif %}
+</div>
+
+<div id="sup-results">
+  {% include "v2/partials/sup_list.html" %}
+</div>
+{% endblock %}

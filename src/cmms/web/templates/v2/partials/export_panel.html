@@ -1,0 +1,54 @@
+{#- 新版介面 v2 匯出中心:當前資料集的過濾表單 + 預覽區(v1 = `partials/export_panel.html`)。
+    ★ `form[data-export-form]`(app.js:改條件 → 清空 `#export-preview`)、hx-get / hx-target / hx-swap、
+      五種過濾器(date / suggest / tristate / chips / text)的欄位名與 `data-suggest`、`#export-preview` 同 v1。
+    ★ chips = 多選 → `.opt-chip` + checkbox(原生控件視覺隱藏);其餘 = label + 全寬 input。
+    ★「試算」= 描邊次鈕;本頁實填只給試算後的「下載 CSV」(一視口一顆)。 -#}
+<div class="export-panel">
+  <h2 class="sec__h">{{ t(spec.title_key) }}</h2>
+  <p class="form-hint">{{ t(spec.desc_key) }}</p>
+
+  {#- 改過濾條件後預覽會被 app.js 清空(data-export-form),提示重新試算 -#}
+  <form class="export-filters" data-export-form
+        hx-get="/app/export/{{ spec.slug }}/preview"
+        hx-target="#export-preview" hx-swap="innerHTML">
+    <div class="item-grid">
+      {% for f in spec.filters %}
+      {% if f.kind == "chips" %}
+      <fieldset class="form-field item-grid__full export-fieldset">
+        <legend class="form-label">{{ t(f.label_key) }}</legend>
+        <div class="opt-chips">
+          {% for val, disp in options_map.get(f.key, []) %}
+          <label class="opt-chip opt-chip--multi">
+            <input type="checkbox" name="{{ f.key }}" value="{{ val }}"><span>{{ disp }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      {% else %}
+      <label class="form-field item-grid__half"><span class="form-label">{{ t(f.label_key) }}</span>
+        {% if f.kind == "date" %}
+        <input class="form-input" type="date" name="{{ f.key }}">
+        {% elif f.kind == "suggest" %}
+        <input class="form-input" name="{{ f.key }}" data-suggest="{{ f.suggest }}"
+               autocomplete="off" placeholder="{{ t('export.any') }}">
+        {% elif f.kind == "tristate" %}
+        <select class="form-input" name="{{ f.key }}">
+          {% for val, lkey in f.options %}
+          <option value="{{ val }}">{{ t(lkey) }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input class="form-input" name="{{ f.key }}" autocomplete="off"
+               placeholder="{{ t('export.any') }}">
+        {% endif %}
+      </label>
+      {% endif %}
+      {% endfor %}
+    </div>
+    <div class="btnrow">
+      <button type="submit" class="btn btn--secondary export-run">{{ t("export.run") }}</button>
+    </div>
+  </form>
+
+  <div id="export-preview" class="export-preview" aria-live="polite"></div>
+</div>

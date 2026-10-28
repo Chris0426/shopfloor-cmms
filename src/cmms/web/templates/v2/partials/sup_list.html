@@ -1,0 +1,26 @@
+{#- 新版介面 v2 供應商結果區塊(v1 = `partials/sup_list.html`;整頁 include + HTMX 即時過濾共用)。
+    ★ 說明句、卡片連結、類型 / 停用標記、地址、分頁同 v1;只換皮成機構索引列。
+    ★ 類型與「停用」都不可點 ⇒ 方角 `.tag`(膠囊只給可點的 chip);停用 = 列壓平。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% if not q %}<p class="form-hint list-hint">{{ t("sup.browse_hint") }}</p>{% endif %}
+{% if orgs %}
+<div class="ledger ledger--inv ledger--sup">
+  {% for o in orgs %}
+  <a class="inv-row sup-row{{ ' is-flat' if not o.is_active else '' }}" href="/app/suppliers/{{ o.org_id }}">
+    <span class="inv-row__thumb">{{ icon("building", "icon") }}</span>
+    <span class="inv-row__body">
+      <span class="ln ln--head">
+        <span class="mono inv-code">{{ o.org_id }}</span>
+        {% if o.org_type %}<span class="tag">{{ o.org_type }}</span>{% endif %}
+        {% if not o.is_active %}<span class="tag tag--obsolete">{{ t("sup.inactive") }}</span>{% endif %}
+      </span>
+      <span class="inv-name eq-name">{{ o.name }}</span>
+      {% if o.address %}<span class="eq-meta">{{ o.address }}</span>{% endif %}
+    </span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">{{ t("sup.empty") }}</p>
+{% endif %}
+{% include "v2/partials/pager.html" %}

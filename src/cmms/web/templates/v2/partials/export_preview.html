@@ -1,0 +1,34 @@
+{#- 新版介面 v2 試算結果(v1 = `partials/export_preview.html`;HTMX 換進 `#export-preview`)。
+    ★ 筆數 + 「以下為前 5 筆」條件(count > 5)、欄 = 依角色過濾後的實際匯出欄、`export_cell` 格式化、
+      下載連結(`download_url` + `download` 屬性)、空狀態、壞日期誠實 banner(不 500)同 v1。
+    ★ 筆數 = 頭數字(字級大於欄頭、墨色);表格窄螢幕在自己的捲動框內橫捲,頁面本身不橫捲。
+    ★「下載 CSV」= 本頁唯一實填。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% if error %}
+<div class="banner banner--err banner--inpage" role="status" data-msg="{{ error }}">{{ t("export." ~ error) }}</div>
+{% else %}
+<p class="export-count">
+  {{ t("export.preview.matched") }} <strong class="qty-v">{{ count }}</strong> {{ t("export.preview.rows") }}
+  {% if count > 5 %}· {{ t("export.preview.first5") }}{% endif %}
+</p>
+{% if rows %}
+<div class="table-scroll export-table-wrap">
+  <table class="grid-table export-table">
+    <thead>
+      <tr>{% for c in columns %}<th>{{ t(c.label_key) }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>{% for c in columns %}<td>{{ export_cell(row.get(c.key)) }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="btnrow">
+  <a class="btn btn--primary export-download" href="{{ download_url }}" download>{{ icon("download") }}{{ t("export.download") }}</a>
+</div>
+<p class="form-hint">{{ t("export.download_hint") }}</p>
+{% else %}
+<p class="empty empty--flush">{{ t("export.empty") }}</p>
+{% endif %}
+{% endif %}

@@ -1,0 +1,18 @@
+{#- 新版介面 v2 多值人名輸入(v1 = `partials/multi_input.html`,0031 多負責人)。**macro 簽章、
+    DOM 鉤子逐字同 v1**:`[data-multi]` / `.multi-input__row` / `.multi-input__rm` /
+    `[data-multi-add]` / `data-suggest="person"` —— app.js 綁的是這些。換皮:× / ＋ 改線條圖示
+    (文字 / title 照 i18n)、每顆鈕 ≥48px。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% macro multi_input(field_name, values, placeholder, t, container_id="") %}
+<div class="multi-input" data-multi {% if container_id %}id="{{ container_id }}"{% endif %}>
+  {% set vals = values if values else [''] %}
+  {% for v in vals %}
+  <div class="multi-input__row">
+    <input class="form-input" name="{{ field_name }}" value="{{ v }}" data-suggest="person"
+           placeholder="{{ placeholder }}" autocomplete="off">
+    <button type="button" class="multi-input__rm" tabindex="-1" title="{{ t('multi.remove') }}" aria-label="{{ t('multi.remove') }}">{{ icon("x") }}</button>
+  </div>
+  {% endfor %}
+  <button type="button" class="multi-input__add" data-multi-add>{{ icon("plus") }}{{ t("multi.add") }}</button>
+</div>
+{% endmacro %}

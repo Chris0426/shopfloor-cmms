@@ -1,0 +1,138 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 個人設定(v1 = `settings.html`)。一張設定紙,由上而下:
+    我的提案 → 匯出 / 供應商 / 說明入口 → 改密碼 → 工單指派名 → 語言 → Jira PAT(`#pat` 錨點)→ Telegram 助理。
+    ★ 各 form 的 action / method / 欄位名、2 個 `confirm()`(刪 PAT / 解除 TG 綁定)、`id="pat"` 錨點、
+      Telegram 三態(剛產生碼 = 明文只顯示這一次 + deep link / 已綁 = 尾 4 碼 + 解除 / 未綁 = 產生)、
+      PAT 一人一支(有 = metadata + 更換 fold + 刪除 / 無 = 單一新增表單,明文永不回顯)同 v1。
+    ★ 結果碼兩個:`?changed=1`(改密碼成功;非 msg 參數 ⇒ `banners.PARAM_BANNER["settings.html"]`,走頁頂 banner)
+      與 `?pat=<碼>`(PAT 存 / 撤結果;v1 畫在 `#pat` 區內 ⇒ v2 也在區內就地畫,類別 = v1 字色:
+      saved 綠 → ok、revoked 無色 → info、其餘紅 → err)。改密碼錯誤 `pw_error`(POST 原頁重渲染)= 欄位旁紅字。
+    ★ 本頁無單一主動作 ⇒ 各 form 送出鈕一律描邊;唯一實填 = 剛產生綁定碼後的「在 Telegram 開啟」(那一刻的唯一下一步)。
+      刪除 / 解除 = 危險描邊(紅框紅字)。綠(PAT 系統名 / TG 已綁定)只住細框。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% set msg = '1' if changed else none %}
+{% set msg_text = t('settings.password.changed') if changed else none %}
+{% set pat_css = {'saved': 'ok', 'revoked': 'info', 'keyunset': 'err', 'keyinvalid': 'err', 'empty': 'err', 'error': 'err'} %}
+{% block title %}{{ t("settings.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("settings.title") }}{% endblock %}
+{% block content %}
+<div class="sheet sheet--card sheet--settings">
+
+<section class="sec">
+  <h2 class="sec__h">{{ t("myprop.title") }}</h2>
+  <p class="form-hint">{{ t("myprop.settings_hint") }}</p>
+  <div class="chips chips--wrap chips--flush">
+    <a class="chip" href="/app/proposals">{{ t("myprop.link") }}</a>
+  </div>
+</section>
+
+{#- 匯出中心 + 供應商 + 說明入口(桌面側欄亦有;手機 5-tab 已滿時仍可到達) -#}
+<section class="sec">
+  <h2 class="sec__h">{{ t("export.settings.card") }}</h2>
+  <p class="form-hint">{{ t("export.settings.hint") }}</p>
+  <div class="chips chips--wrap chips--flush">
+    <a class="chip" href="/app/export">{{ t("export.title") }}</a>
+    <a class="chip" href="/app/suppliers">{{ t("nav.suppliers") }}</a>
+    <a class="chip" href="/app/help">{{ t("help.title") }}</a>
+  </div>
+</section>
+
+<section class="sec">
+  <h2 class="sec__h">{{ t("settings.password.section") }}</h2>
+  <form class="settings-form{{ ' is-err' if pw_error else '' }}" method="post" action="/app/settings/password">
+    <label class="form-field"><span class="form-label">{{ t('settings.password.current') }}</span>
+      <input class="form-input" name="current_password" type="password" placeholder="{{ t('settings.password.current') }}" required
+             autocomplete="current-password"{% if pw_error %} aria-invalid="true"{% endif %}></label>
+    <label class="form-field"><span class="form-label">{{ t('settings.password.new') }}</span>
+      <input class="form-input" name="new_password" type="password" placeholder="{{ t('settings.password.new') }}" required
+             autocomplete="new-password"></label>
+    {% if pw_error %}<p class="form-hint form-hint--err" role="alert">{{ t(pw_error) }}</p>{% endif %}
+    <div class="btnrow"><button type="submit" class="btn btn--secondary">{{ t("settings.password.submit") }}</button></div>
+  </form>
+</section>
+
+<section class="sec">
+  <h2 class="sec__h">{{ t("settings.assignee.section") }}</h2>
+  <p class="form-hint">{{ t("settings.assignee.hint") }}</p>
+  <form class="settings-form" method="post" action="/app/settings/assignee">
+    <label class="form-field"><span class="form-label">{{ t('admin.field.assignee') }}</span>
+      <input class="form-input" name="assignee" value="{{ assignee or '' }}" placeholder="{{ t('admin.field.assignee') }}"
+             data-suggest="person" autocomplete="off"></label>
+    <div class="btnrow"><button type="submit" class="btn btn--secondary">{{ t("settings.assignee.save") }}</button></div>
+  </form>
+</section>
+
+<section class="sec">
+  <h2 class="sec__h">{{ t("settings.locale.section") }}</h2>
+  <div class="chips chips--wrap chips--flush">
+    {% for lc in locales %}
+    <a class="chip{{ ' is-active' if lc == locale else '' }}"{% if lc == locale %} aria-current="true"{% endif %}
+       href="/app/set-locale?locale={{ lc }}&next=/app/settings">{{ locale_labels[lc] }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+{#- id="pat":存 / 撤後 redirect 帶 #pat 直接捲到本區(結果就畫在這裡,不在頁頂 —— 長頁 fold 以下看不到) -#}
+<section class="sec">
+  <h2 class="sec__h" id="pat">{{ t("settings.pat.section") }}</h2>
+  {% if pat and pat_css.get(pat) %}
+  <div class="banner banner--{{ pat_css[pat] }} banner--inpage" role="status" data-msg="{{ pat }}">{{ t("settings.pat." ~ pat) }}</div>
+  {% elif pat %}
+  <div class="banner banner--warn banner--inpage" role="status" data-msg="{{ pat }}">{{ t("ui.banner.unknown") }}: {{ pat }}</div>
+  {% endif %}
+  {#- 一人一支:有 → metadata + 更換 / 刪除;無 → 單一新增表單。明文永不回顯 -#}
+  {% if pat_creds %}
+  {% set c = pat_creds[0] %}
+  <p class="kv">
+    <span class="tag tag--ok-v1">{{ c.system }}</span>
+    <span class="kv__v">{{ t("settings.pat.created") }} {{ c.created_at|local_date }}{% if c.last_used_at %} · {{ t("settings.pat.lastused") }} {{ c.last_used_at|local_date }}{% endif %}</span>
+  </p>
+  <details class="fold">
+    <summary class="fold__sum">{{ icon("pen") }}{{ t("settings.pat.replace") }}</summary>
+    {#- 更換 = 存新的(vault 同交易先撤舊再存新) -#}
+    <form class="fold__body settings-form" method="post" action="/app/settings/pat">
+      <input class="form-input" name="pat_secret" type="password" placeholder="{{ t('settings.pat.placeholder') }}" required
+             aria-label="{{ t('settings.pat.placeholder') }}" autocomplete="off">
+      <div class="btnrow"><button type="submit" class="btn btn--primary">{{ t("settings.pat.replace.submit") }}</button></div>
+      <p class="form-hint">{{ t("settings.pat.replace.hint") }}</p>
+    </form>
+  </details>
+  <form class="btnrow" method="post" action="/app/settings/pat/revoke"
+        onsubmit="return confirm('{{ t("settings.pat.delete.confirm") }}')">
+    <button type="submit" class="btn btn--danger">{{ t("settings.pat.delete") }}</button>
+  </form>
+  {% else %}
+  <p class="form-hint">{{ t("settings.pat.hint") }}</p>
+  <form class="settings-form" method="post" action="/app/settings/pat">
+    <input class="form-input" name="pat_secret" type="password" placeholder="{{ t('settings.pat.placeholder') }}" required
+           aria-label="{{ t('settings.pat.placeholder') }}" autocomplete="off">
+    <div class="btnrow"><button type="submit" class="btn btn--secondary">{{ t("settings.pat.save") }}</button></div>
+  </form>
+  {% endif %}
+</section>
+
+{#- Telegram 助理綁定:產生一次性綁定碼 → 對 bot 傳 /start <碼>。碼只顯示一次(不進 URL) -#}
+<section class="sec">
+  <h2 class="sec__h">{{ t("settings.tg.section") }}</h2>
+  {% if tg_code %}
+  <p class="form-hint tg-intro">{{ t("settings.tg.code_intro") }}</p>
+  <p class="tg-code">{{ tg_code }}</p>
+  <p class="form-hint">{{ t("settings.tg.teach") }}</p>
+  <div class="btnrow">
+    <a class="btn btn--primary" href="https://t.me/{{ bot_username }}?start={{ tg_code }}">{{ t("settings.tg.deeplink") }}</a>
+  </div>
+  {% elif tg_link %}
+  <p class="kv"><span class="tag tag--ok-v1">{{ t("settings.tg.bound") }}</span> <span class="kv__v">····{{ tg_link.chat_id[-4:] }}</span></p>
+  <form class="btnrow" method="post" action="/app/settings/telegram/unlink"
+        onsubmit="return confirm('{{ t("settings.tg.unlink.confirm") }}')">
+    <button type="submit" class="btn btn--danger">{{ t("settings.tg.unlink") }}</button>
+  </form>
+  {% else %}
+  <p class="form-hint">{{ t("settings.tg.hint") }}</p>
+  <form class="btnrow" method="post" action="/app/settings/telegram/code">
+    <button type="submit" class="btn btn--secondary">{{ t("settings.tg.generate") }}</button>
+  </form>
+  {% endif %}
+</section>
+</div>
+{% endblock %}

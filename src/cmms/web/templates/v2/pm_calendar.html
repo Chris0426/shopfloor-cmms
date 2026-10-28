@@ -1,0 +1,95 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 保養行事曆(v1 = `pm_calendar.html`)。月 / 週 / 日三視圖。
+    ★ 結構逐字同 v1:月格 7 欄(含鄰月補格)、週 / 日一天一列、前後導覽、今天格;連結 / 條件逐字
+      (日視圖補開鈕的判準同 v1)。v1 頁內 `<style>` 全部搬進 `v2.css`。
+    ★ 到期標記 = 琥珀 armed(不是紅);已生成工單 = 靛藍 PM 標。
+    ★ `.cal-mark` 截斷(ellipsis)一律掛 `title`(完整資訊住在 title 裡)。
+    ★ 月格整格 = 點日下鑽日視圖的熱區(日數連結撐滿整格,≥48px);格內標記疊在其上、各自可點。 -#}
+{% block title %}{{ t("nav.pm") }} · {{ title }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.pm") }}{% endblock %}
+{% block content %}
+<div class="filterbar pm-filters">
+  {#- 視圖 ‖ 範圍併一列。Mine/All 穿透當前 view + 錨定日,切視圖不掉 scope -#}
+  <div class="chips">
+    <a class="chip" href="/app/pm?scope={{ scope }}">{{ t("pm.view.list") }}</a>
+    {% for vkey, vlabel in [('month','pm.view.calendar'), ('week','pm.view.week'), ('day','pm.view.day')] %}
+    <a class="chip{{ ' is-active' if view == vkey else '' }}"{% if view == vkey %} aria-current="true"{% endif %}
+       href="/app/pm/calendar?view={{ vkey }}&d={{ anchor.isoformat() }}&scope={{ scope }}">{{ t(vlabel) }}</a>
+    {% endfor %}
+    <span class="chips__div" aria-hidden="true"></span>
+    {% for key, label in [('mine','scope.mine'), ('all','scope.all')] %}
+    <a class="chip{{ ' is-active' if scope == key else '' }}"{% if scope == key %} aria-current="true"{% endif %}
+       href="/app/pm/calendar?view={{ view }}&d={{ anchor.isoformat() }}&scope={{ key }}">{{ t(label) }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<nav class="cal-nav">
+  <a class="cal-nav__btn" href="/app/pm/calendar?view={{ view }}&d={{ prev_d.isoformat() }}&scope={{ scope }}">{{ t("pm.cal.prev") }}</a>
+  <span class="cal-title">{{ title }}</span>
+  <a class="cal-nav__btn" href="/app/pm/calendar?view={{ view }}&d={{ next_d.isoformat() }}&scope={{ scope }}">{{ t("pm.cal.next") }}</a>
+</nav>
+
+{% if scope == 'mine' and not has_assignee %}
+<p class="empty">{{ t("scope.empty") }} <a class="text-link" href="/app/pm/calendar?view={{ view }}&scope=all">{{ t("scope.all") }} →</a></p>
+{% endif %}
+
+{% if view == 'month' %}
+<div class="pm-cal">
+  <div class="cal-head">
+    {% for wd in t("pm.cal.weekdays").split(" ") %}<span>{{ wd }}</span>{% endfor %}
+  </div>
+  <div class="cal-grid">
+    {% for week in month_weeks %}
+      {% for day in week %}
+      <div class="cal-cell{{ ' cal-cell--out' if day.month != anchor.month else '' }}{{ ' cal-cell--today' if day == today else '' }}">
+        <a class="cal-daynum" href="/app/pm/calendar?view=day&d={{ day.isoformat() }}&scope={{ scope }}">{{ day.day }}</a>
+        {% for pm in due_by_date.get(day, []) %}
+        <a class="cal-mark cal-mark--due" href="/app/pm?focus={{ pm.pm_id }}&scope={{ scope }}"
+           title="{{ pm.pm_id }} · {{ task_names.get(pm.task_id, pm.task_id) }}">{{ t("pm.cal.due") }} {{ pm.asset_id }}</a>
+        {% endfor %}
+        {% for wo in gen_by_date.get(day, []) %}
+        <a class="cal-mark cal-mark--gen" href="/app/work-orders/{{ wo.work_order_no }}" title="WO-{{ wo.work_order_no }}">{{ t("pm.cal.gen") }} {{ wo.work_order_no }}</a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+</div>
+
+{% else %}
+{#- 週 / 日視圖:一天一列,顯示完整內容(任務名 + EID + 負責人);日視圖含補開工單鈕(描邊:同屏可多顆) -#}
+<div class="cal-rows">
+  {% for day in (week_days if view == 'week' else [anchor]) %}
+  <div class="cal-row{{ ' cal-row--today' if day == today else '' }}">
+    <p class="cal-row__date">{{ day.isoformat() }}{% if day == today %} · {{ t("pm.cal.today") }}{% endif %}</p>
+    {% set dues = due_by_date.get(day, []) %}
+    {% set gens = gen_by_date.get(day, []) %}
+    {% if not dues and not gens %}
+    <p class="form-hint">—</p>
+    {% endif %}
+    {% for pm in dues %}
+    <div class="cal-due">
+      <a class="cal-item" href="/app/pm?focus={{ pm.pm_id }}&scope={{ scope }}">
+        <mark class="armed cal-kind">{{ t("pm.cal.due") }}</mark>
+        <span class="cal-item__task">{{ task_names.get(pm.task_id, pm.task_id) }}</span>
+        <span class="cal-item__id">{{ pm.asset_id }} · {{ pm.pm_id }}{% if pm.effective_assignee %} · {{ pm.effective_assignee }}{% endif %}</span>
+      </a>
+      {#- 日視圖「補開工單」鈕只在已到期(含週末提前)且本期未生成時顯示;連結至確認頁 -#}
+      {% if view == 'day' and pm_due_by(pm.next_due_date, today) and pm.pm_id not in generated %}
+      <a class="btn btn--secondary pm-exec" href="/app/pm/{{ pm.pm_id }}/backfill">{{ t("pm.backfill") }}</a>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% for wo in gens %}
+    <a class="cal-item" href="/app/work-orders/{{ wo.work_order_no }}">
+      <span class="tag tag--indigo cal-kind">{{ t("pm.cal.gen") }}</span>
+      <span class="cal-item__task">{{ wo.brief_description or "—" }}</span>
+      <span class="cal-item__id">WO-{{ wo.work_order_no }} · {{ wo.asset_id }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

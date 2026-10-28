@@ -23,6 +23,8 @@ from cmms.web import i18n
 from cmms.web import routes as web_routes
 
 client = TestClient(app)
+# 本套件斷言 v1 標記 ⇒ 以 cookie 釘在舊版介面(新版 v2 由 tests/test_web_v2.py 覆蓋)。
+client.cookies.set("cmms_ui", "v1")
 
 
 def _fake_user(

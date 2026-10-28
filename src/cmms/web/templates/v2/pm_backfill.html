@@ -1,0 +1,51 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 補開工單確認頁(v1 = `pm_backfill.html`)。GET 零寫入 —— 送出前不成立任何工單。
+    ★ 表單 action(POST /generate)、欄位名 / id / data-suggest、取消目的地逐字同 v1。
+    ★ 一張開單紙:說明 → PM 紙條 → 負責人(預填有效負責人,可覆寫)→ 取消(描邊)+ 送出(本頁唯一實填)。
+    ★ 逾期 = 琥珀 armed(v1 紅 badge)。 -#}
+{% block title %}{{ t("pm.backfill.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("pm.backfill.title") }}{% endblock %}
+{% block content %}
+<div class="sheet sheet--form sheet--pm">
+  <p class="form-hint form-hint--lead">{{ t("pm.backfill.intro") }}</p>
+
+  {% set overdue = pm.next_due_date and pm.next_due_date < today %}
+  <div class="slip pm-slip{{ ' is-overdue' if overdue else '' }}">
+    <span class="slip__strip" aria-hidden="true"></span>
+    <div class="ln ln--head">
+      <span class="tag tag--indigo pm-id">{{ pm.pm_id }}</span>
+      <span class="pm-asset">{{ pm.asset_id }}</span>
+    </div>
+    <p class="slip__brief">{{ task_name or pm.task_id or "—" }}</p>
+    <div class="kv">
+      <span class="kv__k">{{ t("pm.next_due") }}</span>
+      <span class="kv__v pm-due"><span class="date">{{ pm.next_due_date }}</span>
+        {% if overdue %}<mark class="armed pm-due__over">{{ t("pm.overdue") }}</mark>{% endif %}</span>
+    </div>
+    {% if pm.frequency_interval %}
+    <div class="kv">
+      <span class="kv__k">{{ t("pm.every") }}</span>
+      <span class="kv__v">{{ pm.frequency_interval }} {{ pm.frequency_unit or "" }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <form method="post" action="/app/pm/{{ pm.pm_id }}/generate">
+    <div class="form-row">
+      <label class="form-label" for="assigned_person">{{ t("pm.backfill.owner") }}</label>
+      {#- 預設指派給設備全部負責人(或 per-PM 覆寫);override 欄留空 = 沿用,填單一名 = 覆寫 -#}
+      <p class="form-hint form-hint--lead">{{ t("pm.backfill.effective") }}
+        <strong>{{ pm.effective_assignee or t("wo.unassigned") }}</strong></p>
+      <input class="form-input" id="assigned_person" name="assigned_person"
+             value="" placeholder="{{ t('pm.backfill.owner_ph') }}"
+             data-suggest="person" autocomplete="off">
+      <p class="form-hint">{{ t("pm.backfill.owner_hint") }}</p>
+    </div>
+
+    <div class="btnrow pm-submit">
+      <a class="btn btn--secondary" href="/app/pm">{{ t("action.cancel") }}</a>
+      <button type="submit" class="btn btn--primary pm-submit__go">{{ t("pm.backfill.confirm") }}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

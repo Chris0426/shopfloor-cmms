@@ -1,0 +1,368 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 工單詳情(v1 = `work_order_detail.html`)。
+    ★ 資料、連結、表單 action、欄位名、hx 屬性、角色條件、每一句 i18n 逐字同 v1 —— 每個區塊的
+      來龍去脈寫在 v1 同名區塊的註解裡(本檔只標 v2 的差異)。
+    ★ 版面:表頭紙條浮起(單號 + 狀態詞 + 類型 + 資產 + 簡述);唯一常駐實填 = 「新增日誌」;
+      結單是頁尾那一區的主鈕;其餘常駐動作一律描邊;色彩只住 3px 條與章。
+    ★ 區塊順序與 v1 不同(加日誌移到表頭正下方;MRQ 連結與領料排在結單之前;危險操作照舊在最底),
+      action 集合不變。 -#}
+{% from "v2/partials/multi_input.html" import multi_input %}
+{% from "v2/partials/combobox.html" import combobox %}
+{% from "v2/partials/icons.html" import icon %}
+{#- part_* 結果碼在領料區就地顯示,不進頁頂 banner(同 v1) -#}
+{% set msg_local = msg and msg.startswith('part') %}
+{% set msg_text %}{% if msg %}{% if msg in ('forward_ok', 'forward_exists') and mrq %}{{ mrq }} · {% endif %}{{ t("wo.msg." ~ msg) }}{% endif %}{% endset %}
+{% block title %}WO-{{ wo.work_order_no }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}WO-{{ wo.work_order_no }}{% endblock %}
+{% block banner %}{% if not msg_local %}{{ super() }}{% endif %}{% endblock %}
+{% block content %}
+{% macro efc_combobox(value, options, t, dom_id, wrap_class="") %}
+{{ combobox('confirmed_reason_code', value, options, t, dom_id, wrap_class,
+            t('wo.confirmed_reason.search'), t('wo.confirmed_reason.nomatch'),
+            t('wo.confirmed_reason.used')) }}
+{% endmacro %}
+{% set css = status_css(wo.status) %}
+{% set skey = wo_status_key(wo.status, wo.work_type) %}
+{% set act = "/app/work-orders/" ~ wo.work_order_no ~ "/transition" %}
+
+<div class="sheet">
+{#- 已有待審的作廢請求 → 頁內提示(同 v1) -#}
+{% if pending_void %}
+<div class="banner banner--warn banner--inpage" role="status">{{ t("wo.voidreq.pending") }}</div>
+{% endif %}
+
+{# ---- 表頭紙條(浮起):單號 + 狀態詞 + 類型 + 資產 + 簡述 ---- #}
+<header class="slip slip--{{ css }}{{ ' is-flat' if css in ('done', 'muted') else '' }}">
+  <span class="slip__strip" aria-hidden="true"></span>
+  <div class="slip__body">
+    <div class="ln ln--head">
+      <span class="wo-no wo-no--lg">WO-{{ wo.work_order_no }}</span>
+      {% if css in ('done', 'muted') %}
+      <span class="state-word stamp stamp--ink {{ 'stamp--round' if css == 'done' else 'stamp--square' }}">{{ t(skey) }}</span>
+      {% else %}
+      <span class="state-word state-word--box">{{ t(skey) }}</span>
+      {% endif %}
+      {% if wo.status == "ON_HOLD" and wo.hold_reason %}<span class="hold-reason">{{ t("holdreason." ~ wo.hold_reason) }}</span>{% endif %}
+      <span class="tag tag--{{ wtype_css(wo.work_type) }}">{{ wo.work_type }}</span>
+    </div>
+    {#- 機台名 muted、不在 `<a>` 內 -#}
+    <div class="ln ln--asset">
+      <a class="chip chip--id" href="/app/equipment/{{ wo.asset_id }}">{{ wo.asset_id }}</a>
+      {% if asset_desc %}<span class="asset-desc cut" title="{{ asset_desc }}">{{ asset_desc }}</span>{% endif %}
+    </div>
+    {% if wo.brief_description %}
+    <h2 class="slip__brief">{{ wo.brief_description }}</h2>
+    {% else %}
+    <h2 class="slip__brief slip__brief--empty">{{ t("wo.brief.empty") }}</h2>
+    {% endif %}
+    {#- 故障簡述補填 / 更正:終態限 admin;operator 無此權(同 v1) -#}
+    {% if (not terminal or is_admin) and not is_operator %}
+    <details class="fold brief-edit" {% if msg == 'brief_err' %}open{% endif %}>
+      <summary class="fold__sum">{{ icon("pen") }}{{ t("wo.brief.fill") if not wo.brief_description else t("wo.brief.edit") }}</summary>
+      <form class="fold__body" method="post" action="/app/work-orders/{{ wo.work_order_no }}/brief">
+        <textarea name="brief_description" class="form-input" rows="3" placeholder="{{ t('report.desc_ph') }}">{{ wo.brief_description or '' }}</textarea>
+        <div class="btnrow">
+          <button type="submit" class="btn btn--primary">{{ t("wo.brief.save") }}</button>
+        </div>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+</header>
+
+{#- 加日誌:緊貼表頭紙條下方 ⇒ 第一屏就有唯一實填「新增日誌」。終態限 admin;operator 隱藏(同 v1) -#}
+{% if (not terminal or is_admin) and not is_operator %}
+<form class="addbar" method="post" action="/app/work-orders/{{ wo.work_order_no }}/notes" enctype="multipart/form-data">
+  <input class="addbar__input" name="body" placeholder="{{ t('wo.detail.addupdate') }}" aria-label="{{ t('wo.detail.addupdate') }}" required>
+  <div class="addbar__tools">
+    <label class="addbar__photo" title="{{ t('report.photo') }}" aria-label="{{ t('report.photo') }}">
+      <input type="file" name="photos" accept="image/*" multiple hidden>
+      {{ icon("camera") }}
+    </label>
+    <button class="btn btn--primary addbar__send" type="submit">{{ icon("plus") }}{{ t("wo.note.add") }}</button>
+  </div>
+</form>
+{% endif %}
+
+{# ---- 負責人:顯示 + 就地改派(終態 / operator → 只顯示) ---- #}
+{% if terminal or is_operator %}
+<div class="kv">
+  <span class="kv__k">{{ t("wo.owner") }}</span>
+  <span class="kv__v">{{ assignees|join("、") if assignees else (wo.assigned_vendor or t("wo.unassigned")) }}</span>
+</div>
+{% else %}
+<form class="kv kv--form" method="post" action="/app/work-orders/{{ wo.work_order_no }}/assign">
+  <span class="kv__k">{{ t("wo.owner") }}</span>
+  <div class="kv__v">
+    {{ multi_input("assignees", assignees, t("wo.unassigned"), t) }}
+  </div>
+  <button type="submit" class="btn btn--secondary">{{ t("wo.assign.save") }}</button>
+</form>
+{% endif %}
+
+{#- 停機時數(有值才出,同 v1) -#}
+{% if wo.downtime_minutes %}
+<div class="kv">
+  <span class="kv__k">{{ t("wo.down") }}</span>
+  <span class="kv__v">{{ wo.downtime_minutes // 60 }}h{{ "%02d"|format(wo.downtime_minutes % 60) }}m</span>
+</div>
+{% endif %}
+
+{% if wo.action_taken %}
+<div class="kv">
+  <span class="kv__k">{{ t("wo.action_taken") }}</span>
+  <span class="kv__v">{{ wo.action_taken }}{% if wo.labor_hours %} · {{ t("wo.labor") }} {{ "%g"|format(wo.labor_hours|float) }}h{% endif %}</span>
+</div>
+{% endif %}
+{# 確認故障真因(僅 REACTIVE)。已確認 → 顯示;終態後限 admin 更正 #}
+{% if wo.work_type == "REACTIVE" and (wo.confirmed_reason_code or (terminal and is_admin)) %}
+<div class="kv">
+  <span class="kv__k">{{ t("wo.confirmed_reason") }}</span>
+  <span class="kv__v">{% if wo.confirmed_reason_code %}<span class="tag mono">{{ wo.confirmed_reason_code }}</span>{% else %}<span class="muted">{{ t("wo.confirmed_reason.none") }}</span>{% endif %}</span>
+</div>
+{% if terminal and is_admin %}
+<details class="fold" {% if msg == 'reason_err' %}open{% endif %}>
+  <summary class="fold__sum">{{ icon("pen") }}{{ t("wo.confirmed_reason.edit") }}</summary>
+  <form class="fold__body" method="post" action="/app/work-orders/{{ wo.work_order_no }}/confirmed-reason">
+    {{ efc_combobox(wo.confirmed_reason_code, efc_options, t, "edit", "efc-combo--wide") }}
+    <div class="btnrow">
+      <button type="submit" class="btn btn--primary">{{ t("wo.confirmed_reason.save") }}</button>
+    </div>
+  </form>
+  <p class="form-hint">{{ t("wo.confirmed_reason.hint") }}</p>
+</details>
+{% endif %}
+{% endif %}
+
+{# ---- 工作日誌(時間線) ---- #}
+<section class="sec sec--log">
+<h2 class="sec__h">{{ t("wo.detail.log") }}</h2>
+{% if notes %}
+<ol class="timeline">
+  {% for note in notes %}
+  {% set is_agent = note.author.startswith("agent:") %}
+  {% set photos = photos_by_note.get(note.id, []) %}
+  {#- 終態凍結:本人只能在非終態改 / 刪;admin 可更正;operator 一律不可(同 v1) -#}
+  {% set can_edit = (((note.author == me) and not terminal) or is_admin) and not is_operator %}
+  <li class="tl-entry tick--{{ note_type_css(note.entry_type) }}">
+    <div class="tl-head">
+      <span class="note-type">{{ t("notetype." ~ note.entry_type) }}</span>
+      <span class="author{{ ' author--agent' if is_agent else '' }}">{% if is_agent %}{{ icon("spark", "icon-xs") }}{% endif %}{{ note.author.split(":")[-1] }}</span>
+      {% if note.updated_at %}<span class="edited-mark">{{ t("wo.note.edited") }}</span>{% endif %}
+      {% if note.entry_type == "hold" %}
+      <span class="tl-state">{{ t("wo.detail.statuschange") }} {{ t("status.ON_HOLD") }}</span>
+      {% elif note.entry_type == "resume" %}
+      <span class="tl-state">{{ t("wo.detail.statuschange") }} {{ t("status.IN_PROGRESS") }}</span>
+      {% endif %}
+      <span class="tl-time">{{ note.occurred_at|local_dt("%m/%d %H:%M") }}</span>
+    </div>
+    {% if note.body %}<p class="tl-body tl-body--pre">{{ note.body }}</p>{% endif %}
+    {% if photos %}
+    <div class="tl-photos">
+      {% for att_id, url in photos %}
+      <span class="tl-photo-wrap">
+        <img class="tl-photo" src="{{ url }}" alt="">
+        {% if can_edit %}
+        <form class="bare-form" method="post" action="/app/work-orders/{{ wo.work_order_no }}/notes/{{ note.id }}/photos/{{ att_id }}/delete">
+          <button class="tl-photo-del" type="submit" title="{{ t('wo.note.delphoto') }}" aria-label="{{ t('wo.note.delphoto') }}">{{ icon("x") }}</button>
+        </form>
+        {% endif %}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if can_edit %}
+    <details class="fold tl-edit">
+      <summary class="fold__sum">{{ icon("pen") }}{{ t("wo.note.edit") }}</summary>
+      <form class="fold__body" method="post" action="/app/work-orders/{{ wo.work_order_no }}/notes/{{ note.id }}/edit" enctype="multipart/form-data">
+        <textarea name="body" class="form-input" rows="3" required>{{ note.body }}</textarea>
+        <div class="btnrow">
+          <label class="addbar__photo" title="{{ t('report.photo') }}" aria-label="{{ t('report.photo') }}">
+            <input type="file" name="photos" accept="image/*" multiple hidden>
+            {{ icon("camera") }}
+          </label>
+          <button type="submit" class="btn btn--primary">{{ t("wo.note.save") }}</button>
+          {#- 刪除這筆日誌(軟刪,留稽核) -#}
+          <button type="submit" class="btn btn--danger btnrow__end"
+                  formaction="/app/work-orders/{{ wo.work_order_no }}/notes/{{ note.id }}/delete"
+                  formnovalidate
+                  onclick="return confirm('{{ t("wo.note.del_confirm") }}')">{{ t("wo.note.delete") }}</button>
+        </div>
+      </form>
+    </details>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="empty">{{ t("wo.detail.empty") }}</p>
+{% endif %}
+</section>
+
+{# ---- 狀態 chips:點即切換、當前態高亮;等待原因一鍵切換,不計停機的原因標小字;
+     operator / 終態不出(同 v1) ---- #}
+{% if not terminal and not is_operator and wo.status in ("OPEN", "IN_PROGRESS", "ON_HOLD") %}
+<section class="sec">
+<h2 class="sec__h">{{ t("wo.state") }}</h2>
+<div class="chips chips--wrap state-chips">
+  {#- 處理中:OPEN → start / ON_HOLD → resume(route 依現態分派) -#}
+  <form class="bare-form" method="post" action="{{ act }}">
+    <input type="hidden" name="action" value="progress">
+    <button type="submit" class="chip chip--state{{ ' is-active' if wo.status == 'IN_PROGRESS' else '' }}"{% if wo.status == 'IN_PROGRESS' %} aria-pressed="true"{% endif %}>{{ t("wo.state.progress") }}</button>
+  </form>
+  <form method="post" action="{{ act }}" class="state-holds">
+    <input type="hidden" name="action" value="hold">
+    {% for r in hold_reasons %}
+    <button type="submit" name="hold_reason" value="{{ r.code }}"
+            class="chip chip--state{{ ' is-active' if (wo.status == 'ON_HOLD' and wo.hold_reason == r.code) else '' }}"{% if wo.status == 'ON_HOLD' and wo.hold_reason == r.code %} aria-pressed="true"{% endif %}>
+      {{ t("holdreason." ~ r.code) }}{% if not r.is_downtime %} <span class="chip-note">{{ t("wo.hold.nodown") }}</span>{% endif %}
+    </button>
+    {% endfor %}
+  </form>
+</div>
+</section>
+{% endif %}
+
+{#- operator 無 MRQ 連結 / 領料權(domain 亦擋)→ 兩區整段隱藏 -#}
+{% if not is_operator %}
+{#- 錄影 / 對照實例(ui_hide_jira)→ 整個 MRQ 區不渲染 -#}
+{% if not ui_hide_jira %}
+{# ---- Jira MRQ 連結:一鍵轉發開新 MRQ / 連結既有 MRQ(可勾選此後自動同步) ---- #}
+<section class="sec">
+<h2 class="sec__h">{{ t("wo.links") }}</h2>
+<p class="form-hint">{{ t("wo.links.help") }}</p>
+{% if links %}
+<div class="chips chips--wrap chips--flush">
+  {% for l in links %}
+  <span class="linkchip" title="{{ l.external_key }} · {{ l.link_type }}{% if l.title %} — {{ l.title }}{% endif %}">
+    <span class="linkchip__key">{{ l.external_key }}</span>
+    {% if l.link_type in ("forwarded", "appended") %}
+    <span class="linkchip__sync">{{ t("wo.links.type.sync") }}</span>
+    {% else %}
+    <span class="linkchip__ref">{{ t("wo.links.type.ref") }}</span>
+    {% endif %}
+    <form class="bare-form" method="post" action="/app/work-orders/{{ wo.work_order_no }}/links/{{ l.id }}/remove"
+          onsubmit="return confirm('{{ t("wo.links.remove_confirm") }}')">
+      <button type="submit" class="icon-btn" title="{{ t('wo.links.remove') }}" aria-label="{{ t('wo.links.remove') }}">{{ icon("x") }}</button>
+    </form>
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+<div class="btnrow">
+  <a class="btn btn--secondary" href="/app/work-orders/{{ wo.work_order_no }}/forward">{{ icon("forward") }}{{ t("wo.links.forward") }}</a>
+</div>
+<form class="linkform" method="post" action="/app/work-orders/{{ wo.work_order_no }}/links">
+  <div class="btnrow">
+    <input class="form-input form-input--key" name="external_key" required pattern="[Mm][Rr][Qq]-\d+" placeholder="MRQ-1234"
+           title="{{ t('wo.links.key_hint') }}" aria-label="{{ t('wo.links.key_hint') }}">
+    <button type="submit" class="btn btn--secondary">{{ t("wo.links.add") }}</button>
+  </div>
+  <label class="opt-chip opt-chip--check">
+    <input type="checkbox" name="sync" value="1">
+    <span>{{ t("wo.links.sync_label") }}</span>
+  </label>
+</form>
+</section>
+{% endif %}
+
+{# ---- 領料:記 work_order_part + 扣庫存;終態不可再領 / 改量;歷史回填不可改(同 v1) ---- #}
+<section class="sec">
+<h2 class="sec__h" id="parts">{{ t("wo.parts") }}</h2>
+{% if msg and msg.startswith('part') and msg_banner.get(msg) %}
+<div class="banner banner--{{ msg_banner[msg] }} banner--inpage" role="status" data-msg="{{ msg }}">{{ t("wo.msg." ~ msg) }}</div>
+{% endif %}
+{% if parts %}
+<table class="grid-table wo-parts">
+  <tbody>
+    {% for p in parts %}
+    <tr>
+      <td><a class="chip chip--id" href="/app/inventory/{{ p.item_code }}">{{ p.item_code }}</a></td>
+      <td class="num">×{{ "%g"|format(p.quantity|float) }}</td>
+      <td class="num date-cell">{{ (part_issued_at.get(p.id) or p.created_at)|local_dt("%m/%d") }}</td>
+      {% if not terminal %}
+      <td class="actions-cell">
+        {% if p.source_actor != backfill_source_actor %}
+        <details class="fold fold--inline">
+          <summary class="fold__sum">{{ icon("pen") }}{{ t("wo.parts.editqty") }}</summary>
+          <form class="fold__body btnrow" method="post" action="/app/work-orders/{{ wo.work_order_no }}/parts/{{ p.id }}/update">
+            <input type="hidden" name="nonce" value="{{ nonce }}">
+            <input class="form-input form-input--qty" name="quantity" required type="number" min="0.001" step="any" inputmode="decimal"
+                   value="{{ '%g'|format(p.quantity|float) }}" aria-label="{{ t('wo.parts.editqty') }}">
+            <button type="submit" class="btn btn--primary">{{ t("wo.parts.editqty.save") }}</button>
+          </form>
+        </details>
+        <form class="bare-form" method="post" action="/app/work-orders/{{ wo.work_order_no }}/parts/{{ p.id }}/cancel"
+              onsubmit="return confirm('{{ t("wo.parts.cancel_confirm") }}')">
+          <input type="hidden" name="nonce" value="{{ nonce }}">
+          <button type="submit" class="icon-btn" title="{{ t('wo.parts.cancel') }}" aria-label="{{ t('wo.parts.cancel') }}">{{ icon("x") }}</button>
+        </form>
+        {% endif %}
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="form-hint">{{ t("wo.parts_empty") }}</p>
+{% endif %}
+{% if not terminal %}
+<form class="btnrow partform" method="post" action="/app/work-orders/{{ wo.work_order_no }}/parts">
+  <input type="hidden" name="nonce" value="{{ nonce }}">
+  <input class="form-input form-input--grow mono" name="item_code" required data-suggest="part"
+         data-suggest-strict data-strict-msg="{{ t('strict.part') }}" autocomplete="off"
+         placeholder="{{ t('eq.issue.item') }}" aria-label="{{ t('eq.issue.item') }}">
+  <input class="form-input form-input--qty" name="quantity" required type="number" min="0.001" step="any" inputmode="decimal" placeholder="{{ t('eq.issue.qty') }}" aria-label="{{ t('eq.issue.qty') }}">
+  <button type="submit" class="btn btn--secondary">{{ t("wo.parts_issue") }}</button>
+</form>
+{% endif %}
+</section>
+{% endif %}
+
+{# ---- 結單 / 續修:單一「結單」、填實主色;REACTIVE 順帶確認故障真因(選填、上下堆疊);
+     operator / 終態不出(同 v1) ---- #}
+{% if not terminal and not is_operator %}
+<section class="sec sec--finish">
+  {% if wo.status == "COMPLETED" %}
+  <form method="post" action="{{ act }}"><input type="hidden" name="action" value="reopen"><button type="submit" class="btn btn--secondary">{{ t("wo.reopen") }}</button></form>
+  {% endif %}
+  <form class="finish" method="post" action="{{ act }}">
+    <input type="hidden" name="action" value="finish">
+    {% if wo.work_type == "REACTIVE" %}
+    <div class="form-row">
+      <label class="form-label">{{ t("wo.confirmed_reason") }}</label>
+      {{ efc_combobox(wo.confirmed_reason_code, efc_options, t, "finish", "efc-combo--wide") }}
+      <p class="form-hint">{{ t("wo.confirmed_reason.hint") }}</p>
+    </div>
+    {% endif %}
+    <button type="submit" class="btn btn--primary btn--block">{{ t("wo.finish") }}</button>
+  </form>
+</section>
+{% endif %}
+
+{# ---- 危險操作(取消 / 作廢 —— 非刪除,終態單仍可查):
+     取消限 OPEN、事由必填;operator 只能取消自己開的單。作廢 = admin 直接執行(同 v1) ---- #}
+{% set can_cancel = wo.status == "OPEN" and (not is_operator or wo.created_by == me) %}
+{% if can_cancel or (voidable and is_admin) %}
+<section class="sec sec--danger">
+  <h2 class="sec__h">{{ t("wo.danger") }}</h2>
+  {% if can_cancel %}
+  <form class="btnrow" method="post" action="/app/work-orders/{{ wo.work_order_no }}/cancel"
+        onsubmit="return confirm('{{ t("wo.cancel.confirm") }}')">
+    <input class="form-input form-input--grow" name="reason" required placeholder="{{ t('wo.reason_req') }}" aria-label="{{ t('wo.reason_req') }}">
+    <button type="submit" class="btn btn--danger">{{ t("wo.cancel") }}</button>
+  </form>
+  <p class="form-hint">{{ t("wo.cancel.hint") }}</p>
+  {% endif %}
+  {% if voidable and is_admin %}
+  <form class="btnrow" method="post" action="/app/work-orders/{{ wo.work_order_no }}/void"
+        onsubmit="return confirm('{{ t("wo.void.confirm") }}')">
+    <input class="form-input form-input--grow" name="reason" required placeholder="{{ t('wo.reason_req') }}" aria-label="{{ t('wo.reason_req') }}">
+    <button type="submit" class="btn btn--danger">{{ t("wo.void") }}</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+</div>
+{% endblock %}

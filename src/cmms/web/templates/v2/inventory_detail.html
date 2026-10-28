@@ -1,0 +1,182 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 備品明細(v1 = `inventory_detail.html`)。一張料卡:表頭紙條(料號 + 品名 + 淘汰標記)→
+    照片 → 在庫 / 儲位 / 供應商 / 供應商料號 / 再訂購點 / 量 → 替代品 / 套件 / 所屬套件 / 適用機種 →
+    管理(admin)或提案(engineer)。
+    ★ 資料、連結、表單 action、hidden(nonce)、欄位名、`<details open>` 條件、角色條件、i18n 同 v1;
+      巢狀 `<details>`(品項管理裡再包四個 fold)結構照搬。
+    ★ 結果碼參數叫 `rfq` 不叫 `msg`:頂層把 msg 設成 rfq 後走 v2 base 的 banner 區;類別由
+      `banners.PARAM_BANNER["inventory_detail.html"]`(= v1 `rfq_css`)併進本頁 `msg_banner`,
+      文案 = `inv.rfq.<碼>`(同 v1)。未知碼 ⇒ warn + 原碼(v1 靜默不畫)。
+    ★ 主動作:admin 且已連供應商 ⇒「一鍵 RFQ」是本頁唯一常駐實填;engineer ⇒ 本頁零實填。
+      展開後才出現的表單,其送出鈕 = 該 fold 的主鈕。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% set msg = rfq %}
+{% set msg_prefix = "inv.rfq." %}
+{% block title %}{{ item.item_code }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}<span class="mono">{{ item.item_code }}</span>{% endblock %}
+{% block content %}
+{% set restock = item.reorder_point is not none and item.quantity_on_hand is not none and item.quantity_on_hand < item.reorder_point %}
+<div class="sheet">
+
+<header class="slip{{ ' is-flat' if item.is_obsolete else '' }}">
+  <div class="ln ln--head">
+    <span class="mono inv-code inv-code--lg">{{ item.item_code }}</span>
+    {% if item.is_obsolete %}<span class="tag tag--obsolete">{{ t("inv.obsolete") }}</span>{% endif %}
+  </div>
+  <p class="slip__brief">{{ item.name or "—" }}</p>
+  {% if item.description %}<p class="card-desc">{{ item.description }}</p>{% endif %}
+</header>
+
+{% if photos %}
+<div class="inv-photos">
+  {% for att_id, url in photos %}<img class="inv-photo" src="{{ url }}" alt="">{% endfor %}
+</div>
+{% endif %}
+
+<dl class="facts">
+  <div class="facts__row facts__row--qty">
+    <dt class="facts__k">{{ t("inv.onhand") }}</dt>
+    <dd class="facts__v"><span class="qty-v">{{ item.quantity_on_hand | int if item.quantity_on_hand is not none else "—" }}</span>
+      {#- 紅籤 = 低於再訂購點,與備品卡同一條 -#}
+      {% if restock %}<span class="tag tag--restock">{{ t("inv.reorder") }}</span>{% endif %}</dd>
+  </div>
+  <div class="facts__row"><dt class="facts__k">{{ t("inv.location") }}</dt><dd class="facts__v facts__v--strong">{{ item.bin_location or "—" }}</dd></div>
+  <div class="facts__row"><dt class="facts__k">{{ t("inv.supplier") }}</dt>
+    <dd class="facts__v">{% if supplier_org %}<a class="text-link" href="/app/suppliers/{{ supplier_org.org_id }}">{{ supplier_org.name }}</a>
+        {% else %}{{ item.supplier or "—" }}{% endif %}</dd></div>
+  <div class="facts__row"><dt class="facts__k">{{ t("inv.vpart") }}</dt><dd class="facts__v mono">{{ item.vendor_part_no or "—" }}</dd></div>
+  <div class="facts__row"><dt class="facts__k">{{ t("inv.reorderpt") }}</dt><dd class="facts__v">{{ "%g"|format(item.reorder_point|float) if item.reorder_point is not none else "—" }}</dd></div>
+  <div class="facts__row"><dt class="facts__k">{{ t("inv.reorderqty") }}</dt><dd class="facts__v">{{ "%g"|format(item.reorder_quantity|float) if item.reorder_quantity is not none else "—" }}</dd></div>
+</dl>
+
+{% if is_admin and item.supplier_org_id %}
+{#- 一鍵 RFQ(ADR-026,human-initiated,admin-only):數量 = reorder_quantity 或 reorder_point − on_hand -#}
+<form class="btnrow" method="post" action="/app/inventory/{{ item.item_code }}/rfq">
+  <input type="hidden" name="nonce" value="{{ nonce }}">
+  <button type="submit" class="btn btn--primary">{{ t("inv.rfq") }}</button>
+</form>
+{% elif is_admin %}
+<p class="form-hint">{{ t("inv.rfq.nosupplier") }}</p>
+{% endif %}
+
+{#- 關聯:可點的料號 = chip(可換行不溢出);適用機種不可點 ⇒ 方角 tag -#}
+{% if alternatives %}
+<div class="rel"><p class="panel__label">{{ t("inv.alternatives") }}</p>
+  <div class="chips chips--wrap chips--flush">{% for a in alternatives %}<a class="chip chip--id" href="/app/inventory/{{ a }}">{{ a }}</a>{% endfor %}</div></div>
+{% endif %}
+{% if kit %}
+<div class="rel"><p class="panel__label">{{ t("inv.kit") }}</p>
+  <div class="chips chips--wrap chips--flush">{% for k in kit %}<a class="chip chip--id" href="/app/inventory/{{ k }}">{{ k }}</a>{% endfor %}</div></div>
+{% endif %}
+{% if parent_kits %}
+<div class="rel"><p class="panel__label">{{ t("inv.parent_kits") }}</p>
+  <div class="chips chips--wrap chips--flush">{% for pk in parent_kits %}<a class="chip chip--id" href="/app/inventory/{{ pk }}">{{ pk }}</a>{% endfor %}</div></div>
+{% endif %}
+{% if subtypes %}
+<div class="rel"><p class="panel__label">{{ t("inv.subtypes") }}</p>
+  <div class="tags">{% for s in subtypes %}<span class="tag">{{ s }}</span>{% endfor %}</div></div>
+{% endif %}
+
+{% if pending_item_edit %}
+<div class="banner banner--info banner--inpage" role="status">{{ t("inv.rfq.editpending") }}</div>
+{% endif %}
+
+{% if is_admin %}
+{#- ---- 品項管理(admin):單一入口,收攏四個各自獨立的治理操作(端點不合併)---- -#}
+<details class="fold fold--panel" {% if rfq in ('editerr','saved','nochange','subtypeerr','photo_ok','photo_err') %}open{% endif %}>
+  <summary class="fold__sum">{{ icon("down") }}{{ t("inv.admin") }}</summary>
+  <div class="fold__body fold__body--nest">
+
+    {#- 主檔編輯(governed update_item) -#}
+    <details class="fold fold--sub" {% if rfq in ('editerr', 'saved') %}open{% endif %}>
+      <summary class="fold__sum">{{ t("inv.edit") }}</summary>
+      <form class="fold__body item-form" method="post" action="/app/inventory/{{ item.item_code }}/update">
+        {% include "v2/partials/item_fields.html" %}
+        <div class="btnrow">
+          <button type="submit" class="btn btn--primary">{{ t("admin.action.save") }}</button>
+          {#- 取消 = 退回乾淨明細(重載,fold 收合)—— 可靠退出,不靠 JS -#}
+          <a href="/app/inventory/{{ item.item_code }}" class="btn btn--secondary">{{ t("action.cancel") }}</a>
+        </div>
+      </form>
+    </details>
+
+    {#- 適用機種編輯(複選既有 canonical 子類型,覆寫 junction) -#}
+    <details class="fold fold--sub" {% if rfq == 'subtypeerr' %}open{% endif %}>
+      <summary class="fold__sum">{{ t("inv.subtypes.edit") }}</summary>
+      <form class="fold__body" method="post" action="/app/inventory/{{ item.item_code }}/subtypes">
+        <select class="form-input form-input--multi" name="subtypes" multiple size="8" aria-label="{{ t('inv.subtypes') }}">
+          {% for s in all_subtypes %}
+          <option value="{{ s.code }}" {% if s.code in subtypes %}selected{% endif %}>{{ s.code }}</option>
+          {% endfor %}
+        </select>
+        <div class="btnrow"><button type="submit" class="btn btn--primary">{{ t("admin.action.save") }}</button></div>
+        <p class="form-hint">{{ t("inv.subtypes.hint") }}</p>
+      </form>
+    </details>
+
+    {#- 盤點調整(記 ADJUST 帳,必附事由;不裸改庫存,ADR-005) -#}
+    <details class="fold fold--sub" {% if rfq == 'nochange' %}open{% endif %}>
+      <summary class="fold__sum">{{ t("inv.adjust") }}</summary>
+      <form class="fold__body" method="post" action="/app/inventory/{{ item.item_code }}/adjust">
+        <input type="hidden" name="nonce" value="{{ nonce }}">
+        <div class="item-grid">
+          <label class="form-field item-grid__third"><span class="form-label">{{ t('inv.adjust.newqty') }}</span>
+            <input class="form-input" name="new_quantity" required type="number" min="0" step="any" inputmode="decimal" placeholder="{{ t('inv.adjust.newqty') }}"></label>
+          {#- 常用事由下拉 + 可自由輸入(datalist;值仍自由文字落稽核,不做 enum) -#}
+          <label class="form-field item-grid__rest"><span class="form-label">{{ t('inv.adjust.reason') }}</span>
+            <input class="form-input" name="reason" required list="adjust-reasons" placeholder="{{ t('inv.adjust.reason') }}"></label>
+        </div>
+        <datalist id="adjust-reasons">
+          <option value="{{ t('inv.adjust.r.purchase') }}"></option>
+          <option value="{{ t('inv.adjust.r.count') }}"></option>
+          <option value="{{ t('inv.adjust.r.scrap') }}"></option>
+          <option value="{{ t('inv.adjust.r.return') }}"></option>
+          <option value="{{ t('inv.adjust.r.missinglog') }}"></option>
+        </datalist>
+        <div class="btnrow"><button type="submit" class="btn btn--primary">{{ t("admin.action.save") }}</button></div>
+        <p class="form-hint">{{ t("inv.adjust.hint") }}</p>
+      </form>
+    </details>
+
+    {#- 照片管理(換照片 = 逐張刪除 + 上傳新照片;軟刪,物件儲存保留供稽核) -#}
+    <details class="fold fold--sub" {% if rfq in ('photo_ok','photo_err') %}open{% endif %}>
+      <summary class="fold__sum">{{ t("inv.photos.manage") }}</summary>
+      <div class="fold__body">
+        {% if photos %}
+        <div class="photo-manage">
+          {% for att_id, url in photos %}
+          <div class="photo-manage__item">
+            <img class="inv-photo inv-photo--sm" src="{{ url }}" alt="">
+            <form class="bare-form" method="post" action="/app/inventory/{{ item.item_code }}/photos/{{ att_id }}/delete">
+              <button type="submit" class="btn btn--secondary">{{ t("inv.photos.delete") }}</button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <form class="photo-upload" method="post" action="/app/inventory/{{ item.item_code }}/photos" enctype="multipart/form-data">
+          <input class="form-file" type="file" name="photos" accept="image/*" multiple aria-label="{{ t('inv.photos.upload') }}">
+          <div class="btnrow"><button type="submit" class="btn btn--primary">{{ t("inv.photos.upload") }}</button></div>
+        </form>
+        <p class="form-hint">{{ t("inv.photos.hint") }}</p>
+      </div>
+    </details>
+
+  </div>
+</details>
+{% elif not pending_item_edit %}
+{#- ---- 主檔修改提案(engineer:提案 → admin 審 dry-run diff 後 confirm;待審時不重收)---- -#}
+<details class="fold fold--panel" {% if rfq in ('properr',) %}open{% endif %}>
+  <summary class="fold__sum">{{ icon("pen") }}{{ t("inv.propose") }}</summary>
+  <form class="fold__body item-form" method="post" action="/app/inventory/{{ item.item_code }}/propose-update">
+    {% include "v2/partials/item_fields.html" %}
+    <div class="btnrow">
+      <button type="submit" class="btn btn--primary">{{ t("inv.propose.submit") }}</button>
+      <a href="/app/inventory/{{ item.item_code }}" class="btn btn--secondary">{{ t("action.cancel") }}</a>
+    </div>
+    <p class="form-hint">{{ t("inv.propose.hint") }}</p>
+  </form>
+</details>
+{% endif %}
+</div>
+{% endblock %}

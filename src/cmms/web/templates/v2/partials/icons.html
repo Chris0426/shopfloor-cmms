@@ -1,0 +1,49 @@
+{#- 新版介面 v2 圖示(emoji / Unicode 字形不充當圖示系統)。
+    一套線條、同一筆寬;只給 v2 模板 import(`{% from "v2/partials/icons.html" import icon %}`),
+    不經 `_render`、無 v1 同名檔。未知名稱 ⇒ 不畫(不猜)。圖示一律 aria-hidden,文字 / aria-label
+    由呼叫端給(i18n)。 -#}
+{% macro icon(name, cls="icon-sm") -%}
+{%- if name == "search" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+{%- elif name == "camera" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2.5"/><circle cx="12" cy="13.5" r="3.4"/><path d="M8 7 L9.5 4.5 H14.5 L16 7"/></svg>
+{%- elif name == "send" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/></svg>
+{%- elif name == "pen" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16Z"/><line x1="13.5" y1="6.5" x2="17.5" y2="10.5"/></svg>
+{%- elif name == "x" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+{%- elif name == "down" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+{%- elif name == "up" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 15 12 9 18 15"/></svg>
+{%- elif name == "check" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 12.5 10 17 19 7"/></svg>
+{%- elif name == "thumb-up" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11v9H4v-9Z"/><path d="M7 11l4-7a2 2 0 0 1 2.6 2.4L13 10h5.5a2 2 0 0 1 2 2.3l-1.2 6.2A2 2 0 0 1 17.3 20H7"/></svg>
+{%- elif name == "thumb-down" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 13V4H4v9Z"/><path d="M7 13l4 7a2 2 0 0 0 2.6-2.4L13 14h5.5a2 2 0 0 0 2-2.3l-1.2-6.2A2 2 0 0 0 17.3 4H7"/></svg>
+{%- elif name == "out" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><line x1="20" y1="4" x2="11" y2="13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+{%- elif name == "forward" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+{%- elif name == "note" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14v12l-4 4H5Z"/><line x1="8.5" y1="9" x2="15.5" y2="9"/><line x1="8.5" y1="12.5" x2="13" y2="12.5"/></svg>
+{%- elif name == "spark" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 4 L13.6 10.4 L20 12 L13.6 13.6 L12 20 L10.4 13.6 L4 12 L10.4 10.4 Z"/></svg>
+{%- elif name == "plus" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+{#- B2:一維條碼(P35:機台標籤 = 1D 條碼,不是 QR)/ 料件盒(備品縮圖佔位,同 v1 inv_list 的形) -#}
+{%- elif name == "barcode" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5h3M21 7V5h-3M3 17v2h3M21 17v2h-3"/><line x1="6.5" y1="8" x2="6.5" y2="16"/><line x1="9.5" y1="8" x2="9.5" y2="16"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="15" y1="8" x2="15" y2="16"/><line x1="17.5" y1="8" x2="17.5" y2="16"/></svg>
+{%- elif name == "box" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 L20 7 V17 L12 21 L4 17 V7 Z"/><path d="M4 7 L12 11 L20 7"/><line x1="12" y1="11" x2="12" y2="21"/></svg>
+{#- B4:設備(同 v1 eq_list / 導覽的形)/ 機構(同 v1 sup_list / 導覽的形)/ 下載(同 v1 export_preview 的形) -#}
+{%- elif name == "chip" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+{%- elif name == "building" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V7l8-4 8 4v14"/><line x1="3" y1="21" x2="21" y2="21"/><path d="M10 21v-5h4v5"/></svg>
+{%- elif name == "download" -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M4 19h16"/></svg>
+{%- endif -%}
+{%- endmacro %}

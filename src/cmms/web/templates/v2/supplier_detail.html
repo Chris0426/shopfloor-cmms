@@ -1,0 +1,138 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 供應商明細(v1 = `supplier_detail.html`)。一張機構卡:表頭紙條(代碼 + 名稱 + 啟用 / 停用)→
+    事實 kv(類型 / 網站 / 電話 / 地址,有值才出)→ admin 啟停 → 編輯 fold → 聯絡人(各一張,admin 各一個編輯 fold)
+    → 新增聯絡人 fold。
+    ★ 資料、連結、表單 action、hidden 欄、欄位名、`<details open>` 條件(`msg == 'err'` 開編輯與新增兩個 fold)、
+      角色條件、i18n 文案同 v1。
+    ★ PII:機構層所有登入者可見;個人聯絡資料(email / 電話 / 手機)只在 `is_admin` 分支渲染(route 另以
+      PersonSummary 把 PII 擋在 context 之外 = 縱深),engineer 頁底留「僅管理員可見」那句。
+    ★ 本頁無常駐實填主動作(fold 展開後的送出鈕 = 該 fold 的主鈕)。
+    ★ 綠(啟用 / 主要聯絡人)只住細框、字墨色。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% set msg_text = {'saved': t('sup.msg.saved'), 'adminonly': t('sup.msg.adminonly'), 'err': t('sup.msg.err')}.get(msg) if msg else none %}
+{% block title %}{{ org.name }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}<span class="mono">{{ org.org_id }}</span>{% endblock %}
+{% block content %}
+<div class="sheet sheet--card">
+
+<header class="slip card-slip{{ ' is-flat' if not org.is_active else '' }}">
+  <div class="ln ln--head">
+    <span class="mono inv-code inv-code--lg">{{ org.org_id }}</span>
+    {#- 停用機構 → 所有使用者見標記(不只 admin) -#}
+    {% if org.is_active %}<span class="tag tag--ok-v1">{{ t("sup.active") }}</span>
+    {% else %}<span class="tag tag--obsolete">{{ t("sup.inactive") }}</span>{% endif %}
+  </div>
+  <p class="slip__brief">{{ org.name }}</p>
+</header>
+
+{% if org.org_type or org.website or org.phone or org.address %}
+<dl class="facts">
+  {% if org.org_type %}<div class="facts__row"><dt class="facts__k">{{ t("sup.type") }}</dt><dd class="facts__v">{{ org.org_type }}</dd></div>{% endif %}
+  {% if org.website %}<div class="facts__row"><dt class="facts__k">{{ t("sup.website") }}</dt><dd class="facts__v"><a class="text-link" href="{{ org.website }}" rel="noopener noreferrer" target="_blank">{{ org.website }}</a></dd></div>{% endif %}
+  {% if org.phone %}<div class="facts__row"><dt class="facts__k">{{ t("sup.phone") }}</dt><dd class="facts__v">{{ org.phone }}</dd></div>{% endif %}
+  {% if org.address %}<div class="facts__row facts__row--wide"><dt class="facts__k">{{ t("sup.address") }}</dt><dd class="facts__v">{{ org.address }}</dd></div>{% endif %}
+</dl>
+{% endif %}
+
+{#- admin 啟停(RBAC:UI 藏 + domain assert_active_admin 縱深) -#}
+{% if is_admin %}
+<section class="sec">
+  <h2 class="sec__h">{{ t("sup.status.admin") }}</h2>
+  <form class="btnrow" method="post" action="/app/suppliers/{{ org.org_id }}/active">
+    <input type="hidden" name="active" value="{{ '0' if org.is_active else '1' }}">
+    <button type="submit" class="btn btn--secondary">
+      {{ t("admin.action.deactivate") if org.is_active else t("admin.action.activate") }}
+    </button>
+  </form>
+  <p class="form-hint">{{ t("sup.status.hint") }}</p>
+</section>
+
+{# ---- 機構主檔編輯(admin;engineer 唯讀)---- #}
+<details class="fold fold--panel" {% if msg == 'err' %}open{% endif %}>
+  <summary class="fold__sum">{{ icon("pen") }}{{ t("sup.edit") }}</summary>
+  <form class="fold__body item-form" method="post" action="/app/suppliers/{{ org.org_id }}/update">
+    <div class="item-grid">
+      <label class="form-field item-grid__full"><span class="form-label">{{ t('sup.field.name') }}</span>
+        <input class="form-input" name="name" value="{{ org.name }}" required placeholder="{{ t('sup.field.name') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.type') }}</span>
+        <select class="form-input" name="org_type">
+          <option value="">{{ t('sup.type') }}</option>
+          {% for ot in org_types %}
+          <option value="{{ ot.code }}" {% if org.org_type == ot.code %}selected{% endif %}>{{ ot.label }}</option>
+          {% endfor %}
+        </select></label>
+      {#- org_id(代理鍵)唯讀:PK + FK 目標,改動會斷鏈 -#}
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.orgcode') }}</span>
+        <input class="form-input form-input--readonly mono" value="{{ org.org_id }}" readonly title="{{ t('sup.orgcode.hint') }}"
+               placeholder="{{ t('sup.orgcode') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.website') }}</span>
+        <input class="form-input" name="website" value="{{ org.website or '' }}" placeholder="{{ t('sup.website') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.phone') }}</span>
+        <input class="form-input" name="phone" value="{{ org.phone or '' }}" placeholder="{{ t('sup.phone') }}"></label>
+      <label class="form-field item-grid__full"><span class="form-label">{{ t('sup.address') }}</span>
+        <input class="form-input" name="address" value="{{ org.address or '' }}" placeholder="{{ t('sup.address') }}"></label>
+    </div>
+    <div class="btnrow">
+      <button type="submit" class="btn btn--primary">{{ t("admin.action.save") }}</button>
+      <a href="/app/suppliers/{{ org.org_id }}" class="btn btn--secondary">{{ t("action.cancel") }}</a>
+    </div>
+  </form>
+</details>
+{% endif %}
+
+{# ---- 聯絡人:每人一張(頭像 + 全名 + 分類);admin 才見聯絡資料與編輯 fold ---- #}
+<section class="sec">
+<h2 class="sec__h">{{ t("sup.people") }}</h2>
+{% if people %}
+<div class="contacts">
+  {% for p in people %}
+  <div class="contact">
+    <span class="avatar">{{ (p.full_name or "·")[:1]|upper }}</span>
+    <div class="contact__body">
+      <div class="ln ln--head">
+        <span class="contact__name">{{ p.full_name or "—" }}</span>
+        {% if p.category %}<span class="tag">{{ p.category }}</span>{% endif %}
+        {% if is_admin and p.is_main %}<span class="tag tag--ok-v1">{{ t("sup.f.ismain") }}</span>{% endif %}
+      </div>
+      {% if is_admin %}
+      <p class="contact__pii">
+        {% if p.email %}<span>{{ t("sup.email") }}: {{ p.email }}</span>{% endif %}
+        {% if p.work_phone %}<span>{{ t("sup.workphone") }}: {{ p.work_phone }}</span>{% endif %}
+        {% if p.mobile %}<span>{{ t("sup.mobile") }}: {{ p.mobile }}</span>{% endif %}
+      </p>
+      <details class="fold contact__fold">
+        <summary class="fold__sum">{{ icon("pen") }}{{ t("sup.person.edit") }}</summary>
+        <form class="fold__body item-form" method="post"
+              action="/app/suppliers/{{ org.org_id }}/persons/{{ p.person_id }}/update">
+          {% with p=p %}{% include "v2/partials/person_fields.html" %}{% endwith %}
+          <div class="btnrow">
+            <button type="submit" class="btn btn--primary">{{ t("admin.action.save") }}</button>
+            <a href="/app/suppliers/{{ org.org_id }}" class="btn btn--secondary">{{ t("action.cancel") }}</a>
+          </div>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% if not is_admin %}<p class="form-hint">{{ t("sup.pii_admin_only") }}</p>{% endif %}
+{% else %}
+<p class="empty empty--flush">{{ t("sup.no_people") }}</p>
+{% endif %}
+</section>
+
+{# ---- 新增聯絡人(admin)---- #}
+{% if is_admin %}
+<details class="fold fold--panel" {% if msg == 'err' %}open{% endif %}>
+  <summary class="fold__sum">{{ icon("plus") }}{{ t("sup.people.add") }}</summary>
+  <form class="fold__body item-form" method="post" action="/app/suppliers/{{ org.org_id }}/persons">
+    {% include "v2/partials/person_fields.html" %}
+    <div class="btnrow">
+      <button type="submit" class="btn btn--primary">{{ t("sup.people.add.submit") }}</button>
+    </div>
+  </form>
+</details>
+{% endif %}
+</div>
+{% endblock %}

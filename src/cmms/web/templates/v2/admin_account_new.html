@@ -1,0 +1,28 @@
+{% extends "v2/admin_base.html" %}
+{#- 新版介面 v2 新增帳號(v1 = `admin_account_new.html`)。一張表單紙:label → 全寬 input → hint。
+    ★ 單一「帳號」欄(user_id 由 server 自動導出)、六個欄位名、角色選項與順序、送出 action 逐字同 v1。
+    ★ 機構下拉的 `plant` / `contractor` 是資料值不是文案(v1 硬編)⇒ 照 v1,值與顯示同字,寫在 `{% set %}`。
+    ★ 失敗(POST 原頁重渲染)的 `error` = 原始錯誤字串 ⇒ 殼的 err 類 banner(v1 `.adm-banner` 預設紅)。
+    ★ 指派名 placeholder:v1 硬編英文 ⇒ v2 取既有同義 key `admin.notify.assignee_ph`(en 逐字相同)。
+      唯一實填 = 建立帳號。 -#}
+{% set err_text = error if error is defined else none %}
+{% set org_values = ('plant', 'contractor') %}
+{% block title %}{{ t("admin.create.title") }} · {{ t("nav.admin") }}{% endblock %}
+{% block content %}
+<div class="adm-head"><h2 class="adm-h2">{{ t("admin.create.title") }}</h2></div>
+<form method="post" action="/admin/accounts" class="adm-form">
+  <label class="form-row"><span class="form-label">{{ t("admin.field.username") }}</span>
+    <input class="form-input" name="username" required autofocus autocomplete="off"></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.field.name") }}</span>
+    <input class="form-input" name="display_name" required autocomplete="off"></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.field.org") }}</span>
+    <select class="form-input" name="org">{% for o in org_values %}<option value="{{ o }}">{{ o }}</option>{% endfor %}</select></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.field.role") }}</span>
+    <select class="form-input" name="role"><option value="engineer">{{ t("admin.role.engineer") }}</option><option value="operator">{{ t("admin.role.operator") }}</option><option value="admin">{{ t("admin.role.admin") }}</option></select></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.field.password") }}</span>
+    <input class="form-input" name="password" type="password" required autocomplete="new-password"></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.field.assignee") }}</span>
+    <input class="form-input" name="emaint_assignee" placeholder="{{ t('admin.notify.assignee_ph') }}" autocomplete="off"></label>
+  <div class="btnrow"><button type="submit" class="btn btn--primary">{{ t("admin.create.submit") }}</button></div>
+</form>
+{% endblock %}

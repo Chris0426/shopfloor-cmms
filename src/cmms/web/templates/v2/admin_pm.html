@@ -1,0 +1,37 @@
+{% extends "v2/admin_base.html" %}
+{#- 新版介面 v2 PM 大項目清單(v1 = `admin_pm.html`)。搜尋 + 新增大項目 fold + 任務帳冊表。
+    ★ 搜尋的 hx-get / hx-trigger / hx-target `#task-results` / hx-include / hx-push-url、新增 form action 與欄位名
+      逐字同 v1。結果區 = `v2/partials/admin_task_list.html`(HTMX 局部回傳經 `_render` 同樣拿到 v2 partial)。
+    ★ 本頁唯一實填 = 新增大項目的「建立」(收在 fold 裡,展開才見)。建立失敗(撞號)原頁重渲染 + `err` 紅 banner(殼)。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% block title %}{{ t("admin.pm.title") }} · {{ t("nav.admin") }}{% endblock %}
+{% block content %}
+<div class="adm-head"><h2 class="adm-h2">{{ t("admin.pm.title") }}</h2></div>
+
+<form method="get" action="/admin/pm" class="adm-filter">
+  <label class="search adm-search">{{ icon("search") }}
+    <input class="search__input" name="q" value="{{ q or '' }}" placeholder="{{ t('admin.pm.search') }}" autofocus
+           aria-label="{{ t('admin.pm.search') }}"
+           hx-get="/admin/pm" hx-trigger="input changed delay:250ms, search"
+           hx-target="#task-results" hx-include="closest form" hx-push-url="true"></label>
+</form>
+
+{#- 新增大項目(任務範本):代碼 + 描述 → 建立後進編輯頁串設備 / 加細項 -#}
+<details class="fold adm-fold">
+  <summary class="fold__sum">{{ icon("plus") }}{{ t("admin.pm.newtask") }}</summary>
+  <form class="fold__body" method="post" action="/admin/pm">
+    <div class="adm-inline adm-inline--wide">
+      <input class="adm-in adm-in--code mono" name="task_no" required placeholder="{{ t('admin.pm.taskcode_ph') }}"
+             aria-label="{{ t('admin.pm.task') }}" autocomplete="off">
+      <input class="adm-in adm-in--grow" name="description" required placeholder="{{ t('admin.pm.desc') }}"
+             aria-label="{{ t('admin.pm.desc') }}" autocomplete="off">
+      <button type="submit" class="btn btn--primary">{{ t("admin.pm.create") }}</button>
+    </div>
+    <p class="form-hint">{{ t("admin.pm.newtask_hint") }}</p>
+  </form>
+</details>
+
+<div id="task-results">
+  {% include "v2/partials/admin_task_list.html" %}
+</div>
+{% endblock %}

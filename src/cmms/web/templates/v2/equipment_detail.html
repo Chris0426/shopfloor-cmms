@@ -1,0 +1,280 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 設備明細(v1 = `equipment_detail.html`)。一張機台卡。
+    ★ 資料、連結、表單 action / method、hidden 欄、欄位名、`<details open>` 條件(`msg == 'err'`)、
+      角色條件、`confirm()`、i18n 文案同 v1;每個區塊的背景說明見 v1 同名區塊註解。
+    ★ 版面:表頭紙條(EID + 服務狀態詞 + 描述)→ 報修 CTA(本頁唯一常駐實填;退役 = disabled + 說明)
+      → 事實 kv → 外部 id / 含括模組 → 照片 → admin 啟停旗標 → 主檔編輯 fold → 近期工單 → 用料紀錄。
+    ★ 兩個旗標同 v1:`available_for_service`(可服務 / 停用,資訊性)與 `is_active`(在籍 / 已退役,擋報修)。
+    ★ 頁內 `<style>` 已搬進 v2.css;v1 的 `title=`(EID 唯讀提示 / 取消領料)全保留。
+    ★ 兩種結果碼:`issue`(直領;非 msg 參數 ⇒ `banners.PARAM_BANNER["equipment_detail.html"]`)與 `msg`
+      (啟停 / 主檔編輯;`MSG_BANNER`)。route 上互斥,但 URL 可同時帶 ⇒ 兩條都畫(同 v1 兩個獨立 if 區塊)。 -#}
+{% from "v2/partials/multi_input.html" import multi_input %}
+{% from "v2/partials/icons.html" import icon %}
+{% set issue_text = {'ok': t('eq.issue.ok'), 'dup': t('eq.issue.dup'), 'upd': t('eq.issue.upd'),
+                     'cancelled': t('eq.issue.cancelled'), 'err': t('eq.issue.err')}.get(issue) if issue else none %}
+{% set msg_text = {'saved': t('eq.msg.saved'), 'adminonly': t('eq.msg.adminonly'), 'err': t('eq.msg.err')}.get(msg) if msg else none %}
+{% block title %}{{ asset.asset_id }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}<span class="mono">{{ asset.asset_id }}</span>{% endblock %}
+{% block banner %}
+{% for _code, _text in ((issue, issue_text), (msg, msg_text)) %}
+{% if _code %}
+{#- 表內碼:類別 = msg_banner、文案 = i18n;表外碼 ⇒ warn + 原碼(不靜默) -#}
+{% set _cls = msg_banner.get(_code) if _text else none %}
+<div class="banner banner--{{ _cls or 'warn' }}" role="status" data-msg="{{ _code }}">
+  {%- if _cls %}{{ _text }}{% else %}{{ t("ui.banner.unknown") }}: {{ _code }}{% endif -%}
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}
+{% block content %}
+<div class="sheet sheet--card sheet--eq">
+
+{# ---- 表頭紙條:EID + 服務狀態詞(可服務 / 停用)+ 退役章 + 描述;退役 = 紙條壓平 ---- #}
+<header class="slip card-slip{{ ' is-flat' if not asset.is_active else '' }}">
+  <div class="ln ln--head">
+    <span class="mono inv-code inv-code--lg">{{ asset.asset_id }}</span>
+    {% if asset.available_for_service %}
+    <span class="state-word state-word--box eq-state">{{ t("eq.available") }}</span>
+    {% else %}
+    <span class="state-word eq-state eq-state--retired">{{ t("eq.unavailable") }}</span>
+    {% endif %}
+    {#- 退役設備 → 所有使用者都看得到(is_active = false) -#}
+    {% if not asset.is_active %}
+    <span class="state-word stamp stamp--ink stamp--square eq-state">{{ t("eq.inactive") }}</span>
+    {% endif %}
+  </div>
+  <p class="slip__brief">{{ asset.description or "—" }}</p>
+</header>
+
+{#- 報修 CTA = 常駐實填;退役設備不可報修:disabled + 說明(domain 亦強制拒開單) -#}
+{% if asset.is_active %}
+<div class="btnrow eq-cta">
+  <a class="btn btn--primary btn--block" href="/app/report?eid={{ asset.asset_id }}">{{ t("eq.report_fault") }}</a>
+</div>
+{% else %}
+<div class="btnrow eq-cta">
+  <button class="btn btn--primary btn--block" type="button" disabled aria-disabled="true">{{ t("eq.report_fault") }}</button>
+</div>
+<p class="form-hint">{{ t("eq.report_retired") }}</p>
+{% endif %}
+
+{# ---- 事實 kv:類型 · 子類 / 部門 / 產線 / 負責人 / 型號 / 序號 / 製造商 ---- #}
+<dl class="facts">
+  <div class="facts__row"><dt class="facts__k">{{ t("eq.type") }}</dt><dd class="facts__v">{{ asset.asset_type or "—" }}{% if asset.asset_subtype %} · {{ asset.asset_subtype }}{% endif %}</dd></div>
+  <div class="facts__row"><dt class="facts__k">{{ t("eq.dept") }}</dt><dd class="facts__v">{{ asset.department or "—" }}</dd></div>
+  <div class="facts__row"><dt class="facts__k">{{ t("eq.line") }}</dt><dd class="facts__v">{{ asset.line or "—" }}</dd></div>
+  <div class="facts__row"><dt class="facts__k">{{ t("eq.owner") }}</dt><dd class="facts__v">{{ owners|join("、") if owners else "—" }}</dd></div>
+  <div class="facts__row"><dt class="facts__k">{{ t("eq.model") }}</dt><dd class="facts__v mono">{{ asset.model_no or "—" }}</dd></div>
+  <div class="facts__row"><dt class="facts__k">{{ t("eq.serial") }}</dt><dd class="facts__v mono">{{ asset.serial_no or "—" }}</dd></div>
+  {% if asset.manufacturer %}<div class="facts__row"><dt class="facts__k">{{ t("eq.manufacturer") }}</dt><dd class="facts__v">{{ asset.manufacturer }}</dd></div>{% endif %}
+</dl>
+
+{#- 外部系統 id 不可點 ⇒ 方角 tag;含括模組可點 ⇒ chip(換行不溢出) -#}
+{% if external_ids %}
+<div class="rel"><p class="panel__label">{{ t("eq.external_ids") }}</p>
+  <div class="tags">{% for x in external_ids %}<span class="tag mono">{{ x.namespace }}:{{ x.external_id }}</span>{% endfor %}</div></div>
+{% endif %}
+{% if modules %}
+<div class="rel"><p class="panel__label">{{ t("eq.modules") }}</p>
+  <div class="chips chips--wrap chips--flush">{% for m in modules %}<a class="chip chip--id eq-mod" href="/app/equipment/{{ m.asset_id }}"><span class="mono">{{ m.asset_id }}</span> · {{ m.description }}</a>{% endfor %}</div></div>
+{% endif %}
+
+{% if photos %}
+<div class="inv-photos">
+  {% for url in photos %}<img class="inv-photo" src="{{ url }}" alt="">{% endfor %}
+</div>
+{% endif %}
+
+{#- admin 啟停旗標(RBAC:UI 藏 + domain assert_active_admin 縱深)。可服務 = 純資訊性;
+    在籍(退役)會擋報修 + PM 生成 —— 各旗標旁附獨立說明。綠框只住 tag,字墨色 -#}
+{% if is_admin %}
+<section class="sec eq-admin">
+  <h2 class="sec__h">{{ t("eq.status.admin") }}</h2>
+  <div class="btnrow">
+    <span class="kv__k">{{ t("eq.avail.label") }}</span>
+    {% if asset.available_for_service %}<span class="tag tag--ok-v1">{{ t("eq.available") }}</span>
+    {% else %}<span class="tag">{{ t("eq.unavailable") }}</span>{% endif %}
+    <form class="bare-form" method="post" action="/app/equipment/{{ asset.asset_id }}/flags">
+      <input type="hidden" name="flag" value="available">
+      <input type="hidden" name="value" value="{{ '0' if asset.available_for_service else '1' }}">
+      <button type="submit" class="btn btn--secondary">
+        {{ t("admin.action.deactivate") if asset.available_for_service else t("admin.action.activate") }}</button>
+    </form>
+  </div>
+  <p class="form-hint">{{ t("eq.avail.help") }}</p>
+  <div class="btnrow">
+    <span class="kv__k">{{ t("eq.active.label") }}</span>
+    {% if asset.is_active %}<span class="tag tag--ok-v1">{{ t("admin.status.active") }}</span>
+    {% else %}<span class="tag">{{ t("eq.inactive") }}</span>{% endif %}
+    <form class="bare-form" method="post" action="/app/equipment/{{ asset.asset_id }}/flags">
+      <input type="hidden" name="flag" value="active">
+      <input type="hidden" name="value" value="{{ '0' if asset.is_active else '1' }}">
+      <button type="submit" class="btn btn--secondary">
+        {{ t("admin.action.deactivate") if asset.is_active else t("admin.action.activate") }}</button>
+    </form>
+  </div>
+  <p class="form-hint">{{ t("eq.active.help") }}</p>
+</section>
+
+{# ---- 設備主檔編輯(admin;engineer 唯讀)。EID / 旗標 / 組成 / 照片不在此改 ---- #}
+<details class="fold fold--panel" {% if msg == 'err' %}open{% endif %}>
+  <summary class="fold__sum">{{ icon("pen") }}{{ t("eq.edit") }}</summary>
+  <form class="fold__body item-form" method="post" action="/app/equipment/{{ asset.asset_id }}/edit">
+    <div class="item-grid">
+      {#- EID(PK,建立後不可變)唯讀顯示 -#}
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.eidcode') }}</span>
+        <input class="form-input form-input--readonly mono" value="{{ asset.asset_id }}" readonly title="{{ t('eq.eidcode.hint') }}"
+               placeholder="{{ t('eq.eidcode') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.site') }}</span>
+        <input class="form-input" name="site" value="{{ asset.site or '' }}" required placeholder="{{ t('eq.site') }}"></label>
+      <label class="form-field item-grid__full"><span class="form-label">{{ t('eq.field.desc') }}</span>
+        <input class="form-input" name="description" value="{{ asset.description or '' }}" required placeholder="{{ t('eq.field.desc') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.type') }}</span>
+        <select class="form-input" name="asset_type" required>
+          {% for at in asset_types %}
+          <option value="{{ at.code }}" {% if asset.asset_type == at.code %}selected{% endif %}>{{ at.label }}</option>
+          {% endfor %}
+        </select></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.subtype') }}</span>
+        <input class="form-input" name="asset_subtype" value="{{ asset.asset_subtype or '' }}" placeholder="{{ t('eq.subtype') }}"></label>
+      <div class="form-field item-grid__full"><span class="form-label">{{ t("eq.owner") }}</span>
+        {{ multi_input("owners", owners, t("eq.owner"), t) }}</div>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.dept') }}</span>
+        <select class="form-input" name="department">
+          <option value="">{{ t('eq.dept') }}</option>
+          {% for d in departments %}
+          <option value="{{ d.code }}" {% if asset.department == d.code %}selected{% endif %}>{{ d.label }}</option>
+          {% endfor %}
+        </select></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.line') }}</span>
+        <select class="form-input" name="line">
+          <option value="">{{ t('eq.line') }}</option>
+          {% for ln in lines %}
+          <option value="{{ ln.code }}" {% if asset.line == ln.code %}selected{% endif %}>{{ ln.label }}</option>
+          {% endfor %}
+        </select></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.manufacturer') }}</span>
+        <input class="form-input" name="manufacturer" value="{{ asset.manufacturer or '' }}" placeholder="{{ t('eq.manufacturer') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.model') }}</span>
+        <input class="form-input mono" name="model_no" value="{{ asset.model_no or '' }}" placeholder="{{ t('eq.model') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.serial') }}</span>
+        <input class="form-input mono" name="serial_no" value="{{ asset.serial_no or '' }}" placeholder="{{ t('eq.serial') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.host') }}</span>
+        <input class="form-input" name="host_name" value="{{ asset.host_name or '' }}" placeholder="{{ t('eq.host') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.asset_ref') }}</span>
+        <input class="form-input" name="asset_ref" value="{{ asset.asset_ref or '' }}" placeholder="{{ t('eq.asset_ref') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.product') }}</span>
+        <input class="form-input" name="product" value="{{ asset.product or '' }}" placeholder="{{ t('eq.product') }}"></label>
+      <label class="form-field item-grid__half"><span class="form-label">{{ t('eq.psc') }}</span>
+        <input class="form-input" name="process_segment_class" value="{{ asset.process_segment_class or '' }}" placeholder="{{ t('eq.psc') }}"></label>
+      <label class="form-field item-grid__full"><span class="form-label">{{ t('eq.weblink') }}</span>
+        <input class="form-input" name="weblink" value="{{ asset.weblink or '' }}" placeholder="{{ t('eq.weblink') }}"></label>
+      <label class="form-field item-grid__full"><span class="form-label">{{ t('eq.comments') }}</span>
+        <textarea class="form-input" name="comments" placeholder="{{ t('eq.comments') }}" rows="2">{{ asset.comments or '' }}</textarea></label>
+    </div>
+    <div class="btnrow">
+      <button type="submit" class="btn btn--primary">{{ t("admin.action.save") }}</button>
+      <a href="/app/equipment/{{ asset.asset_id }}" class="btn btn--secondary">{{ t("action.cancel") }}</a>
+    </div>
+  </form>
+</details>
+{% endif %}
+
+{# ---- 近期工單:截 5 筆 +「此設備全部工單」;狀態色只住刻度 ---- #}
+<section class="sec">
+<h2 class="sec__h">{{ t("eq.recent_wos") }}</h2>
+{% if work_orders %}
+<div class="eq-list">
+  {% for wo in work_orders %}
+  {% set css = status_css(wo.status) %}
+  <a class="eq-item tick--{{ css }}{{ ' is-flat' if css in ('done', 'muted') else '' }}" href="/app/work-orders/{{ wo.work_order_no }}">
+    <span class="ln ln--head">
+      <span class="wo-no">WO-{{ wo.work_order_no }}</span>
+      <span class="state-word">{{ t(wo_status_key(wo.status, wo.work_type)) }}</span>
+    </span>
+    <span class="brief">{{ wo.brief_description or "—" }}</span>
+    <span class="eq-meta">{{ wo.asset_id }} · {{ wo.work_type }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty empty--flush">{{ t("eq.no_wos") }}</p>
+{% endif %}
+{% if work_orders %}
+<a class="more-link" href="/app/work-orders?scope=all&tab=all&q={{ asset.asset_id }}">{{ t("eq.recent_wos_all") }} →</a>
+{% endif %}
+</section>
+
+{# ---- 用料紀錄:直領表單(operator 不出)+ 帳目表截 5 筆 + 全部 / 收合 ---- #}
+<section class="sec">
+<h2 class="sec__h">{{ t("eq.parts") }}</h2>
+{#- 直領(選料 → 領;歸屬此設備、扣 on_hand)。operator 無領料權(domain issue_to_asset 閘)→ 隱藏 -#}
+{% if not is_operator %}
+<form class="btnrow partform" method="post" action="/app/equipment/{{ asset.asset_id }}/issue">
+  <input type="hidden" name="nonce" value="{{ nonce }}">
+  <input class="form-input form-input--grow mono" name="item_code" required placeholder="{{ t('eq.issue.item') }}"
+         aria-label="{{ t('eq.issue.item') }}"
+         data-suggest="part" data-suggest-strict data-strict-msg="{{ t('strict.part') }}"
+         autocomplete="off">
+  <input class="form-input form-input--qty" name="quantity" required inputmode="decimal" placeholder="{{ t('eq.issue.qty') }}"
+         aria-label="{{ t('eq.issue.qty') }}">
+  <input class="form-input form-input--grow" name="reason" placeholder="{{ t('eq.issue.reason') }}"
+         aria-label="{{ t('eq.issue.reason') }}">
+  <button type="submit" class="btn btn--secondary">{{ t("eq.issue.submit") }}</button>
+</form>
+{% endif %}
+
+{% if part_usage %}
+<table class="grid-table eq-parts">
+  <tbody>
+    {% for txn in part_usage %}
+    <tr>
+      <td><a class="chip chip--id mono" href="/app/inventory/{{ txn.item_code }}">{{ txn.item_code }}</a></td>
+      {% if txn.kind == "RETURN" %}
+      {#- 回庫補償帳(改量 / 取消領料):正數,誠實呈現 -#}
+      <td class="num">+{{ "%g"|format(txn.qty_delta|float) }} <span class="tag">{{ t("eq.parts_return") }}</span></td>
+      {% else %}
+      <td class="num">×{{ "%g"|format(-txn.qty_delta|float) }}</td>
+      {% endif %}
+      <td class="num date-cell">{{ txn.occurred_at|local_date }}</td>
+      <td>
+        {% if txn.work_order_no %}
+        <a class="chip chip--id mono" href="/app/work-orders/{{ txn.work_order_no }}">WO-{{ txn.work_order_no }}</a>
+        {% else %}<span class="tag">{{ t("eq.parts_direct") }}</span>{% endif %}
+      </td>
+      <td class="actions-cell">
+        {#- 直領帳(ISSUE、無工單、未被取消 / supersede)可改量 / 取消;工單領料到工單詳情頁操作。
+            歷史回填帳從未扣 on_hand → 取消 / 改量會反灌庫存,隱藏(domain 亦擋);operator 不出 -#}
+        {% if txn.kind == "ISSUE" and not txn.work_order_no and txn.txn_id not in cancelled_issue_ids and txn.source_actor != backfill_source_actor and not is_operator %}
+        <details class="fold fold--inline tl-edit">
+          <summary class="fold__sum">{{ icon("pen") }}{{ t("wo.parts.editqty") }}</summary>
+          <form class="fold__body btnrow" method="post" action="/app/equipment/{{ asset.asset_id }}/issue/{{ txn.txn_id }}/update">
+            <input type="hidden" name="nonce" value="{{ nonce }}">
+            <input class="form-input form-input--qty" name="quantity" required type="number" min="0.001" step="any" inputmode="decimal"
+                   value="{{ '%g'|format(-txn.qty_delta|float) }}" aria-label="{{ t('wo.parts.editqty') }}">
+            <button type="submit" class="btn btn--primary">{{ t("wo.parts.editqty.save") }}</button>
+          </form>
+        </details>
+        <form class="bare-form" method="post" action="/app/equipment/{{ asset.asset_id }}/issue/{{ txn.txn_id }}/cancel"
+              onsubmit="return confirm('{{ t("wo.parts.cancel_confirm") }}')">
+          <input type="hidden" name="nonce" value="{{ nonce }}">
+          <button type="submit" class="icon-btn" title="{{ t('wo.parts.cancel') }}" aria-label="{{ t('wo.parts.cancel') }}">{{ icon("x") }}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{#- 預設截 5 筆 → 「全部(N)」展開;展開狀態 → 收合退路 -#}
+{% if show_all_parts and part_usage_total > 5 %}
+<a class="more-link" href="/app/equipment/{{ asset.asset_id }}">{{ t("eq.parts_collapse") }}</a>
+{% elif not show_all_parts and part_usage_total > 5 %}
+<a class="more-link" href="/app/equipment/{{ asset.asset_id }}?parts=all">{{ t("eq.parts_all") }} ({{ part_usage_total }}) →</a>
+{% endif %}
+{% else %}
+<p class="form-hint">{{ t("eq.parts_empty") }}</p>
+{% endif %}
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+{#- 新版介面 v2 admin 後台殼(v1 = `admin_base.html`)。與 `v2/base.html` 零共用(同 v1):
+    admin = 同一本日誌簿的「管理員辦公桌」—— 暖紙 + 欄線 + 墨字,桌面為主(主欄 ≥ 980px),手機不橫向爆版。
+    ★ 頂列 = 標題 + admin 頁連結(href / i18n key / 順序逐字同 v1)+ 回前台 + 登出 + 頭像(title = 使用者名)。
+      無 dock、無 FAB、無語言切換(v1 如此;`set_locale` 的 `next` 只收 `/app`)。
+    ★ 導覽 active = 墨色加重 + 底線 + `aria-current`(不用赤陶字當選取態)。
+    ★ 只載 v2.css(不載 app.css);v1 的 `<style>`(`.adm-*`)全在 v2.css,純 token。
+      htmx + app.js 照載(`[data-suggest]` / `[data-multi]` 由 app.js 綁)。
+    ★ 示範站橫幅(`partials/demo_banner.html`,CMMS_DEMO_MODE=1 才渲染)同 v1 置頂。
+    ★ banner 區:`err` = 路由 `?err=<quote(原始錯誤字串)>`(值域開放)⇒ err 類 banner、內容原字串
+      (v1 `.adm-banner` 預設紅)。頁面可頂層 `{% set err_text = … %}` 改寫文案
+      (`admin_owners` 的 i18n key 分支、`admin_account_new` 的 `error`)。 -#}
+{%- set adm_nav = [
+  ('accounts', '/admin/accounts', 'admin.accounts.title'),
+  ('pm', '/admin/pm', 'admin.pm.title'),
+  ('proposals', '/admin/proposals', 'admin.prop.title'),
+  ('audit', '/admin/audit', 'admin.audit.title'),
+  ('attachments', '/admin/attachments', 'admin.att.title'),
+  ('credentials', '/admin/credentials', 'admin.cred.title'),
+  ('vocab', '/admin/vocab', 'admin.vocab.title'),
+  ('notify', '/admin/notify', 'admin.notify.title'),
+  ('relationships', '/admin/relationships', 'admin.rel.title'),
+  ('owners', '/admin/owners', 'admin.owners.title'),
+] %}
+<html lang="{{ locale }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>{% block title %}{{ t("nav.admin") }} · {{ t("app.name") }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/v2.css?v={{ static_v }}">
+  <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>
+  <script src="/static/app.js?v={{ static_v }}" defer></script>
+</head>
+<body class="admin">
+  {% include "partials/demo_banner.html" %}
+  <header class="adm-top">
+    <h1 class="adm-top__title">{{ t("nav.admin") }}</h1>
+    {#- 主導覽只到 `/admin`,各 admin 頁一律從這一列進 -#}
+    <nav class="adm-nav" aria-label="{{ t('ui.nav.primary') }}">
+      {% for key, href, label in adm_nav %}
+      <a href="{{ href }}"{% if active == key %} class="is-active" aria-current="page"{% endif %}>{{ t(label) }}</a>
+      {% endfor %}
+    </nav>
+    <div class="adm-top__end">
+      <a href="/app">{{ t("admin.back") }}</a>
+      <a href="/app/logout">{{ t("nav.logout") }}</a>
+      <span class="avatar" title="{{ user_name or '' }}">{{ user_initial or "·" }}</span>
+    </div>
+  </header>
+
+  <main class="adm-wrap">
+    {% block banner %}
+    {%- set _err = err_text if err_text is defined else (err if err is defined else none) %}
+    {% if _err %}<div class="banner banner--err" role="alert">{{ _err }}</div>{% endif %}
+    {% endblock %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

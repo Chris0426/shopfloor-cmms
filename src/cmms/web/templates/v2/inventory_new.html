@@ -1,0 +1,41 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 新增備品(v1 = `inventory_new.html`,admin-only)。一張空白料卡。
+    ★ 表單 action / enctype / 欄位名 / hidden nonce / 期初在庫 / 照片同 v1;`item_fields` 與明細頁共用。
+    ★ 結果碼 `?msg=err`(驗證錯誤)走 v2 base 的 banner 區,文案同 v1。
+    ★ 主動作 =「建立」實填;取消 = 描邊連結。 -#}
+{% set msg_text = {'err': t('inv.create.err')}.get(msg) if msg else none %}
+{% block title %}{{ t("inv.create.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("inv.create.title") }}{% endblock %}
+{% block content %}
+<form class="sheet sheet--form item-form" method="post" action="/app/inventory/new" enctype="multipart/form-data">
+  {#- item_code(主鍵)= 建立時可編輯必填,建立後不可變 -#}
+  <div class="form-row">
+    <label class="form-field"><span class="form-label">{{ t('inv.create.code') }}</span>
+      <input class="form-input mono" name="item_code" required maxlength="50"
+             placeholder="{{ t('inv.create.code') }}" title="{{ t('inv.create.codehint') }}"
+             autocomplete="off"></label>
+  </div>
+
+  {#- 共用主檔欄位組(name/description/…/is_stocked/is_obsolete);blank SimpleNamespace 渲染空白 -#}
+  {% include "v2/partials/item_fields.html" %}
+
+  {#- 期初在庫(選填)→ route 另送 ADJUST 記帳(ADR-005,不裸設 on_hand) -#}
+  <div class="form-row">
+    <label class="form-field"><span class="form-label">{{ t('inv.create.initqty') }}</span>
+      <input class="form-input form-input--qty" name="initial_quantity" type="number" min="0" step="any" inputmode="decimal"
+             placeholder="{{ t('inv.create.initqty') }}"></label>
+  </div>
+
+  {#- 照片(選填)→ 品項建立後掛上(附件需 owner 已存在,route 於同一請求 create 後上傳) -#}
+  <div class="form-row">
+    <label class="form-field"><span class="form-label">{{ t("inv.photos.upload") }}</span>
+      <input class="form-file" type="file" name="photos" accept="image/*" multiple></label>
+  </div>
+  <input type="hidden" name="nonce" value="{{ nonce }}">
+  <p class="form-hint">{{ t("inv.create.codehint") }}</p>
+  <div class="btnrow">
+    <button type="submit" class="btn btn--primary">{{ t("inv.create.submit") }}</button>
+    <a href="/app/inventory" class="btn btn--secondary">{{ t("action.cancel") }}</a>
+  </div>
+</form>
+{% endblock %}

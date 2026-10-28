@@ -1,0 +1,93 @@
+{% extends "v2/admin_base.html" %}
+{% from "v2/partials/multi_input.html" import multi_input %}
+{#- 新版介面 v2 批次指定負責人(v1 = `admin_owners.html`)。免去一台台點選。
+    過濾(搜尋 + 「僅未設」預設)→ 勾選表(全選 + PM 數)→ 多值負責人 → 套用到勾選。
+    ★ 過濾 GET form、套用 POST form(hidden `q` / `missing` 保留同一檢視)、逐列 `name="asset_ids"` + `class="owner-row"`、
+      表頭全選 `id="owner-all"`(title 照留)、`multi_input("owners", [], …)` macro、cap 截斷提示逐字同 v1;
+      inline `<script>` 全選逐字搬(不進 app.js)。
+    ★ `err` 分支逐字:`t(err) if err.startswith("admin.") else err`(`admin.owners.err.noselect` 是 i18n key,其餘原字串)
+      ⇒ 頂層 `err_text` 交殼畫 err banner。成功 `ok`:v1 綠 inline ⇒ `banner--ok`。
+    ★ 截斷提示:v1 紅字 ⇒ 琥珀 warn 列。唯一實填 = 「套用到勾選」;勾選列 = 選取淡底。 -#}
+{% set err_text = (t(err) if err.startswith("admin.") else err) if err else none %}
+{% block title %}{{ t("admin.owners.title") }} · {{ t("nav.admin") }}{% endblock %}
+{% block content %}
+<div class="adm-head"><h2 class="adm-h2">{{ t("admin.owners.title") }}</h2></div>
+{% if ok is not none %}
+<div class="banner banner--ok banner--inpage" role="status">
+  {{ t("admin.owners.ok_pre") }} {{ ok }} {{ t("admin.owners.ok_post") }}
+</div>
+{% endif %}
+<p class="form-hint form-hint--lead">{{ t("admin.owners.intro") }}</p>
+
+{#- ---- 過濾器(搜尋 + 只列缺負責人)---- -#}
+<form method="get" action="/admin/owners" class="adm-filter">
+  <input class="adm-in adm-in--grow" name="q" value="{{ q }}" autocomplete="off"
+         placeholder="{{ t('admin.owners.search_ph') }}" aria-label="{{ t('admin.owners.search_ph') }}">
+  <label class="adm-check">
+    <input class="check" type="checkbox" name="missing" value="1" {{ 'checked' if missing == '1' else '' }}>
+    {{ t("admin.owners.only_missing") }}
+  </label>
+  <button type="submit" class="adm-btn">{{ t("admin.owners.filter") }}</button>
+</form>
+
+{% if truncated %}
+<div class="banner banner--warn banner--inpage" role="note">{{ t("admin.owners.truncated") }}</div>
+{% endif %}
+
+{#- ---- 選取 + 指定 ---- -#}
+<form method="post" action="/admin/owners">
+  <input type="hidden" name="q" value="{{ q }}">
+  <input type="hidden" name="missing" value="{{ missing }}">
+  <div class="adm-scroll">
+  <table class="adm-table adm-table--pick">
+    <thead>
+      <tr>
+        <th class="adm-cell--pick"><input class="check" type="checkbox" id="owner-all" title="{{ t('admin.owners.select_all') }}"
+                   aria-label="{{ t('admin.owners.select_all') }}"></th>
+        <th>{{ t("admin.owners.col_eid") }}</th>
+        <th>{{ t("admin.owners.col_desc") }}</th>
+        <th>{{ t("admin.owners.col_line") }}</th>
+        <th>{{ t("admin.owners.col_owner") }}</th>
+        <th class="num">{{ t("admin.owners.col_pm") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assets %}
+      <tr>
+        <td class="adm-cell--pick"><input class="check owner-row" type="checkbox" name="asset_ids" value="{{ a.asset_id }}"
+                   aria-label="{{ a.asset_id }}"></td>
+        <td class="mono adm-id">{{ a.asset_id }}</td>
+        <td>{{ a.description or "—" }}</td>
+        <td>{{ a.line or "—" }}</td>
+        <td>{{ a.owners|join("、") if a.owners else "—" }}</td>
+        <td class="mono num">{{ pm_counts.get(a.asset_id, 0) }}</td>
+      </tr>
+      {% endfor %}
+      {% if not assets %}
+      <tr><td colspan="6" class="form-hint">{{ t("admin.owners.empty") }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="adm-form">
+    <div class="form-row">
+      <span class="form-label">{{ t("admin.owners.owner_label") }}</span>
+      {{ multi_input("owners", [], t("admin.owners.owner_ph"), t) }}
+      <p class="form-hint">{{ t("admin.owners.clear_hint") }}</p>
+    </div>
+    <div class="btnrow"><button type="submit" class="btn btn--primary">{{ t("admin.owners.apply") }}</button></div>
+  </div>
+</form>
+
+<script>
+/* 表頭「全選」勾選框:切換所有列的勾選狀態(小互動,內嵌即可)。 */
+(function () {
+  var master = document.getElementById("owner-all");
+  if (!master) return;
+  master.addEventListener("change", function () {
+    document.querySelectorAll("input.owner-row").forEach(function (c) { c.checked = master.checked; });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,32 @@
+{#- 新版介面 v2 聯絡人欄位組(v1 = `partials/person_fields.html`;admin 新增 / 編輯共用;`p` = person 或
+    undefined〔新增〕)。★ 欄位名、值、分類下拉、主要聯絡人勾選同 v1;換皮:label + 全寬 input
+    (label 文案 = placeholder 同一個 i18n key)、勾選改自畫方框(原生控件不外露)。 -#}
+<div class="item-grid">
+  <label class="form-field item-grid__full"><span class="form-label">{{ t('sup.f.fullname') }}</span>
+    <input class="form-input" name="full_name" value="{{ p.full_name or '' if p else '' }}" placeholder="{{ t('sup.f.fullname') }}"></label>
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.f.firstname') }}</span>
+    <input class="form-input" name="first_name" value="{{ p.first_name or '' if p else '' }}" placeholder="{{ t('sup.f.firstname') }}"></label>
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.f.lastname') }}</span>
+    <input class="form-input" name="last_name" value="{{ p.last_name or '' if p else '' }}" placeholder="{{ t('sup.f.lastname') }}"></label>
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.category') }}</span>
+    <select class="form-input" name="category">
+      <option value="">{{ t('sup.category') }}</option>
+      {% for c in categories %}
+      <option value="{{ c.code }}" {% if p and p.category == c.code %}selected{% endif %}>{{ c.label }}</option>
+      {% endfor %}
+    </select></label>
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.email') }}</span>
+    <input class="form-input" name="email" value="{{ p.email or '' if p else '' }}" placeholder="{{ t('sup.email') }}"></label>
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.workphone') }}</span>
+    <input class="form-input" name="work_phone" value="{{ p.work_phone or '' if p else '' }}" placeholder="{{ t('sup.workphone') }}"></label>
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.mobile') }}</span>
+    <input class="form-input" name="mobile" value="{{ p.mobile or '' if p else '' }}" placeholder="{{ t('sup.mobile') }}"></label>
+  <label class="form-field item-grid__half"><span class="form-label">{{ t('sup.f.ext') }}</span>
+    <input class="form-input" name="extension" value="{{ p.extension or '' if p else '' }}" placeholder="{{ t('sup.f.ext') }}"></label>
+  <label class="form-field item-grid__full"><span class="form-label">{{ t('sup.address') }}</span>
+    <input class="form-input" name="work_address" value="{{ p.work_address or '' if p else '' }}" placeholder="{{ t('sup.address') }}"></label>
+  <label class="opt-chip opt-chip--check item-grid__full">
+    <input type="checkbox" name="is_main" value="true" {% if p and p.is_main %}checked{% endif %}>
+    <span>{{ t("sup.f.ismain") }}</span>
+  </label>
+</div>

@@ -1,0 +1,29 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 設備查詢(v1 = `equipment.html`)。設備卡索引:搜尋列在 swap target 之外(打字不丟焦點),
+    類別 chip / 清單 / 分頁在 `#eq-results` 內(chip 連結帶 q,HTMX 即時過濾後才不會過期)。
+    ★ 搜尋表單的 hx 屬性(含 `hx-push-url`)、hidden `atype`(只帶使用者顯式選的類別)、`autofocus` 同 v1。
+    ★ 結果碼 `adminonly` 走 v2 base 的 banner 區(類別由 `banners.py` 供給,文案同 v1)。
+    ★ admin「新增設備」= 離開本頁的描邊入口(本頁任務是找機台,不放實填主鈕)。 -#}
+{% from "v2/partials/icons.html" import icon %}
+{% set msg_text = {'adminonly': t('eq.msg.adminonly.create')}.get(msg) if msg else none %}
+{% block title %}{{ t("nav.equipment") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("nav.equipment") }}{% endblock %}
+{% block content %}
+<div class="listhead">
+  <form class="search" role="search" method="get" action="/app/equipment">
+    <input class="search__input" name="q" value="{{ q or '' }}" placeholder="{{ t('eq.search') }}" aria-label="{{ t('eq.search') }}" autofocus
+           hx-get="/app/equipment" hx-trigger="input changed delay:250ms, search"
+           hx-target="#eq-results" hx-include="closest form" hx-push-url="true">
+    {#- 只帶「使用者顯式選的類別」(chip 點選);未顯式時留空,讓伺服端在有搜尋字串時預設「全部」(同 v1) -#}
+    <input type="hidden" name="atype" value="{{ atype_explicit }}">
+    <button class="search__btn" type="submit" aria-label="{{ t('ui.search') }}">{{ icon("search") }}</button>
+  </form>
+  {% if is_admin %}
+  <a href="/app/equipment/new" class="btn btn--secondary listhead__new">{{ icon("plus") }}{{ t("eq.create.title") }}</a>
+  {% endif %}
+</div>
+
+<div id="eq-results">
+  {% include "v2/partials/eq_list.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2「找不到」頁(v1 = `placeholder.html`)。沒有自己的路由:備品 / 設備 / 供應商等詳情路由
+    查無時渲染(`screen_title` = 使用者要找的那個識別碼)。
+    ★ v1 硬編「—— coming soon.」語意不對(實際是查無)⇒ v2 用 i18n key `ui.notfound`(三語)。
+      識別碼照印(頁首 + 句首),使用者看得到自己找的是什麼。
+    ★ 回列表 = base 的返回鍵(`back_url`,有傳才出);底部 tab / 側欄照常可走。 -#}
+{% block title %}{{ screen_title }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}<span class="mono">{{ screen_title }}</span>{% endblock %}
+{% block content %}
+<div class="sheet sheet--card">
+  <p class="empty empty--flush notfound"><span class="mono notfound__id">{{ screen_title }}</span> · {{ t("ui.notfound") }}</p>
+</div>
+{% endblock %}

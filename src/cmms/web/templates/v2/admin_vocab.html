@@ -1,0 +1,179 @@
+{% extends "v2/admin_base.html" %}
+{#- 新版介面 v2 受控詞彙(v1 = `admin_vocab.html`)。六張帳冊表:等待原因(可增改不刪)/ 儲位(增 + 啟停)/
+    唯讀詞彙(wo_status + 四張 code/label)/ 失效詞彙兩軸(mes_failmode、equipment_failure_code,永不合併)。
+    ★ 4 個 POST form 的 action / 欄位名 / hidden 值、`is_downtime` 勾選(新增預設勾)、代碼格式說明、各表欄位順序與
+      計數逐字同 v1。表名(`wo_status` 等)是技術名不是文案(v1 硬編)⇒ 照 v1,寫在 `{% set %}`。
+    ★ `is_downtime` 不回溯警示:v1 紅字 ⇒ 琥珀 warn 列(admin 警語與操作台一致)。
+    ★ 一視口一顆實填 = 「新增等待原因」(本頁唯一可編的受控詞彙);新增儲位 / 行內儲存 / 啟停一律描邊。 -#}
+{% set vocab_ro_tables = [("wo_note_type", note_types), ("freq_unit", freq_units), ("org_type", org_types), ("stock_txn_kind", txn_kinds)] %}
+{% set vocab_status_table = 'wo_status' %}
+{% set vocab_mfc_table = 'mes_failmode' %}
+{% set vocab_efc_table = 'equipment_failure_code' %}
+{% block title %}{{ t("admin.vocab.title") }} · {{ t("nav.admin") }}{% endblock %}
+{% block content %}
+<div class="adm-head"><h2 class="adm-h2">{{ t("admin.vocab.title") }}</h2></div>
+
+{#- ---- wo_hold_reason:唯一可編輯的受控詞彙(增 / 改 label + is_downtime,不刪)---- -#}
+<h3 class="adm-h3">{{ t("admin.vocab.hold.title") }}</h3>
+<p class="form-hint">{{ t("admin.vocab.hold.nodelete") }}</p>
+<div class="banner banner--warn banner--inpage" role="note">{{ t("admin.vocab.hold.dt_warn") }}</div>
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.vocab.code") }}</th>
+      <th>{{ t("admin.vocab.label") }}</th>
+      <th>{{ t("admin.vocab.downtime") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in hold_reasons %}
+    <tr>
+      <td class="mono adm-id">{{ r.code }}</td>
+      <td colspan="3">
+        <form method="post" action="/admin/vocab/hold-reasons/{{ r.code }}/update" class="adm-inline">
+          <input class="adm-in adm-in--grow" name="label" value="{{ r.label }}" required aria-label="{{ t('admin.vocab.label') }}">
+          <label class="adm-check">
+            <input class="check" type="checkbox" name="is_downtime" value="1" {{ 'checked' if r.is_downtime else '' }}>
+            {{ t("admin.vocab.downtime") }}
+          </label>
+          <button type="submit" class="adm-btn">{{ t("admin.action.save") }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<form method="post" action="/admin/vocab/hold-reasons" class="adm-form">
+  <h4 class="adm-h4">{{ t("admin.vocab.hold.add") }}</h4>
+  <label class="form-row"><span class="form-label">{{ t("admin.vocab.code") }}</span>
+    <input class="form-input mono" name="code" required placeholder="{{ t('admin.vocab.code_ph') }}" autocomplete="off"></label>
+  <label class="form-row"><span class="form-label">{{ t("admin.vocab.label") }}</span>
+    <input class="form-input" name="label" required autocomplete="off"></label>
+  <label class="adm-check">
+    <input class="check" type="checkbox" name="is_downtime" value="1" checked>
+    {{ t("admin.vocab.downtime") }}
+  </label>
+  <p class="form-hint">{{ t("admin.vocab.code_hint") }}</p>
+  <div class="btnrow"><button type="submit" class="btn btn--primary">{{ t("admin.vocab.hold.add") }}</button></div>
+</form>
+
+{#- ---- storage_bin:備品儲位受控詞彙(增 + 啟停,不刪)---- -#}
+<h3 class="adm-h3">{{ t("admin.vocab.bin.title") }}</h3>
+<p class="form-hint">{{ t("admin.vocab.bin.hint") }}</p>
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead>
+    <tr>
+      <th>{{ t("admin.vocab.code") }}</th>
+      <th>{{ t("admin.vocab.bin.state") }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in storage_bins %}
+    <tr{% if not b.is_active %} class="is-flat"{% endif %}>
+      <td class="mono adm-id">{{ b.code }}</td>
+      <td>{{ t("admin.status.active") if b.is_active else t("admin.status.inactive") }}</td>
+      <td class="adm-cell--act">
+        <form method="post" action="/admin/vocab/storage-bins/{{ b.code }}/toggle" class="adm-inline">
+          <input type="hidden" name="is_active" value="{{ '0' if b.is_active else '1' }}">
+          <button type="submit" class="adm-btn">{{ t("admin.action.deactivate") if b.is_active else t("admin.action.activate") }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<form method="post" action="/admin/vocab/storage-bins" class="adm-form">
+  <h4 class="adm-h4">{{ t("admin.vocab.bin.add") }}</h4>
+  <label class="form-row"><span class="form-label">{{ t("admin.vocab.code") }}</span>
+    <input class="form-input mono" name="code" required autocomplete="off"></label>
+  <div class="btnrow"><button type="submit" class="btn btn--secondary">{{ t("admin.vocab.bin.add") }}</button></div>
+</form>
+
+{#- ---- 唯讀受控詞彙(純顯示;新值走 migration / seed)---- -#}
+<h3 class="adm-h3">{{ t("admin.vocab.readonly") }}</h3>
+<p class="form-hint">{{ t("admin.vocab.readonly_hint") }}</p>
+
+<h4 class="adm-h4 mono">{{ vocab_status_table }}</h4>
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead><tr>
+    <th>{{ t("admin.vocab.code") }}</th><th>{{ t("admin.vocab.label") }}</th>
+    <th class="num">{{ t("admin.vocab.rank") }}</th><th>{{ t("admin.vocab.terminal") }}</th>
+    <th>{{ t("admin.vocab.downtime") }}</th>
+  </tr></thead>
+  <tbody>
+    {% for s in statuses %}
+    <tr>
+      <td class="mono adm-id">{{ s.code }}</td><td>{{ s.label }}</td><td class="mono num">{{ s.rank }}</td>
+      <td>{{ "✓" if s.is_terminal else "—" }}</td><td>{{ "✓" if s.is_downtime else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% for tbl_name, rows in vocab_ro_tables %}
+<h4 class="adm-h4 mono">{{ tbl_name }}</h4>
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead><tr><th>{{ t("admin.vocab.code") }}</th><th>{{ t("admin.vocab.label") }}</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+    <tr><td class="mono adm-id">{{ r.code }}</td><td>{{ r.label }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endfor %}
+
+{#- ---- 失效受控詞彙(唯讀;兩軸永不合併;種子走 CLI load-mes-failmodes / load-efc-codes)---- -#}
+<h3 class="adm-h3">{{ t("admin.vocab.failure.title") }}</h3>
+<p class="form-hint">{{ t("admin.vocab.failure.hint") }}</p>
+
+<h4 class="adm-h4"><span class="mono">{{ vocab_mfc_table }}</span> — {{ t("admin.vocab.mfc.axis") }} ({{ mes_failmodes | length }})</h4>
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead><tr>
+    <th>{{ t("admin.vocab.mfc.station") }}</th><th>{{ t("admin.vocab.mfc.flabel") }}</th>
+    <th>{{ t("admin.vocab.mfc.signal") }}</th><th>{{ t("admin.vocab.mfc.kind") }}</th>
+    <th>{{ t("admin.vocab.mfc.semantic") }}</th>
+  </tr></thead>
+  <tbody>
+    {% for r in mes_failmodes %}
+    <tr>
+      <td class="mono">{{ r.station }}</td><td class="mono adm-id">{{ r.label }}</td>
+      <td class="mono">{{ r.signal_id or "—" }}</td><td>{{ r.entry_kind }}</td>
+      <td>{{ r.semantic_zh or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h4 class="adm-h4"><span class="mono">{{ vocab_efc_table }}</span> — {{ t("admin.vocab.efc.axis") }} ({{ efc_codes | length }})</h4>
+<p class="form-hint">{{ t("admin.vocab.efc.hint") }}</p>
+<div class="adm-scroll">
+<table class="adm-table">
+  <thead><tr>
+    <th>{{ t("admin.vocab.efc.code") }}</th><th>{{ t("admin.vocab.efc.descr") }}</th>
+    <th>{{ t("admin.vocab.efc.station_hint") }}</th>
+  </tr></thead>
+  <tbody>
+    {% for r in efc_codes %}
+    <tr>
+      <td class="mono adm-id">{{ r.code }}</td><td>{{ r.descr or "—" }}</td>
+      <td class="mono">{{ r.station_hint or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 低庫存批次詢價(v1 = `inventory_rfq_batch.html`,admin)。供應商分組預覽 → 逐組送出。
+    ★ 每組的表單 action / hidden(nonce-供應商 / supplier_org_id / item_codes)/ 料號連結 / 數量格式
+      (`"%g"|format`)/ 沒有 email 時的誠實說明同 v1。
+    ★ 上一次送出的真實結果(sent / drafted / failed;不一律報成功)參數叫 `sent`:頂層把 msg 設成 sent
+      後走 v2 base 的 banner 區;類別 = `banners.PARAM_BANNER["inventory_rfq_batch.html"]`,
+      文案同 v1(sent → `inv.rfq_batch.sent`,drafted → `inv.rfq.drafted`,其餘 → `inv.rfq.failed`)。
+      SMTP 未配置的 drafted 是頁面狀態不是結果碼 ⇒ 留在頁內 warn。
+    ★ 各組的「送出」彼此等重(沒有哪一組是本頁唯一主動作)⇒ 一律描邊,同畫面不出現多顆實填。 -#}
+{% set msg = sent %}
+{% set msg_text = {'sent': t('inv.rfq_batch.sent'), 'drafted': t('inv.rfq.drafted'), 'failed': t('inv.rfq.failed')}.get(msg) if msg else none %}
+{% block title %}{{ t("inv.rfq_batch") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("inv.rfq_batch") }}{% endblock %}
+{% block content %}
+<div class="sheet">
+{% if not smtp_ok %}<div class="banner banner--warn banner--inpage" role="status">{{ t("inv.rfq.drafted") }}</div>{% endif %}
+<p class="form-hint form-hint--lead">{{ t("inv.rfq_batch.hint") }}</p>
+
+{% if drafts %}
+{% for d in drafts %}
+<section class="sec rfq-group">
+  <h2 class="sec__h">{{ d.supplier_name }}</h2>
+  <p class="form-hint">{{ d.recipient_email or t("inv.rfq_batch.nomail") }}</p>
+  <ul class="rfq-lines">
+    {% for code, qty in d.lines %}
+    <li class="rfq-line"><a class="chip chip--id" href="/app/inventory/{{ code }}">{{ code }}</a><span class="qty-v qty-v--sm">× {{ "%g"|format(qty|float) }}</span></li>
+    {% endfor %}
+  </ul>
+  <form class="btnrow" method="post" action="/app/inventory-rfq">
+    <input type="hidden" name="nonce" value="{{ nonce }}-{{ d.supplier_org_id }}">
+    <input type="hidden" name="supplier_org_id" value="{{ d.supplier_org_id }}">
+    <input type="hidden" name="item_codes" value="{{ d.lines | map(attribute=0) | join(',') }}">
+    <button type="submit" class="btn btn--secondary">{{ t("inv.rfq_batch.send") }}</button>
+  </form>
+</section>
+{% endfor %}
+{% else %}
+<p class="empty">{{ t("inv.rfq_batch.empty") }}</p>
+{% endif %}
+</div>
+{% endblock %}

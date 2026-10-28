@@ -1,0 +1,28 @@
+{#- 新版介面 v2 轉發頁 description 區塊(v1 = `partials/forward_description.html`)。GET 首載與
+    AI 生成後(`_render` → 本檔)皆渲染這份。
+    ★ `#fwd-desc-wrap` / `#fwd-desc` / `#fwd-wos` 的 hx 契約、AI 鈕的 hx-post / hx-include /
+      hx-target / hx-swap / hx-disabled-elt 與進行中兩段字(`.fwd-ai-btn__label` / `__busy`)逐字同 v1。
+    ★ 換皮:label → 全寬輸入 → 提示;AI 失敗那一句走錯誤字色。 -#}
+<div id="fwd-desc-wrap" class="form-row">
+  <label class="form-label" for="fwd-desc">{{ t("wo.forward.description") }}</label>
+  <textarea id="fwd-desc" name="description" rows="6" class="form-input" required
+            placeholder="{{ t('wo.forward.desc_ph') }}">{{ description }}</textarea>
+  {% if ai_error == "disabled" %}
+  <p class="form-hint">{{ t("wo.forward.ai_disabled") }}</p>
+  {% elif ai_error %}
+  <p class="form-hint form-hint--err">{{ t("wo.forward.ai_failed") }}</p>
+  {% endif %}
+  {% if assistant_enabled %}
+  <div class="fwd-ai">
+    <button type="button" class="btn btn--secondary fwd-ai-btn"
+            hx-post="/app/work-orders/{{ work_order_no }}/forward/ai-description"
+            hx-include="#fwd-wos, #fwd-desc"
+            hx-target="#fwd-desc-wrap" hx-swap="outerHTML"
+            hx-disabled-elt="this">
+      <span class="fwd-ai-btn__label">{{ t("wo.forward.ai_generate") }}</span>
+      <span class="fwd-ai-btn__busy">{{ t("wo.forward.ai_generating") }}</span>
+    </button>
+    <span class="form-hint">{{ t("wo.forward.ai_overwrite") }}</span>
+  </div>
+  {% endif %}
+</div>

@@ -1,0 +1,14 @@
+{#- 新版介面 v2 分頁列。**邏輯、連結逐字同 v1 `partials/pager.html`**(上一頁 / 下一頁,
+    只在有多頁時顯示),只換皮:每個可點目標 ≥48px、數字 tabular。
+    v2 清單頁 include 的必須是本檔(Jinja include 不經 `_render`)。 -#}
+{% if page > 1 or has_next %}
+<nav class="pager" aria-label="{{ t('pager.page') }}">
+  {% if page > 1 %}
+  <a class="pager__btn" href="{{ pager_base }}page={{ page - 1 }}">{{ t("pager.prev") }}</a>
+  {% else %}<span class="pager__btn is-disabled" aria-disabled="true">{{ t("pager.prev") }}</span>{% endif %}
+  <span class="pager__page">{{ t("pager.page") }} {{ page }}</span>
+  {% if has_next %}
+  <a class="pager__btn" href="{{ pager_base }}page={{ page + 1 }}">{{ t("pager.next") }}</a>
+  {% else %}<span class="pager__btn is-disabled" aria-disabled="true">{{ t("pager.next") }}</span>{% endif %}
+</nav>
+{% endif %}

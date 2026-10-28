@@ -1,0 +1,26 @@
+{% extends "v2/base.html" %}
+{#- 新版介面 v2 匯出中心(v1 = `export.html`)。資料集卡片 → 過濾 → HTMX 試算(筆數 + 前 5 列)→ 下載 CSV。
+    ★ 資料集卡片的連結(`?ds=<slug>`)、當前卡判準(`slug == spec.slug`)、`#export-panel` 容器同 v1。
+      卡片 = 可點的選項(整張是 `<a>`,當前 = `is-active` + `aria-current`);選取態 ≠ 主動作(淡底細框、不實填)。
+    ★ 本頁唯一實填 = 試算後才出現的「下載 CSV」。 -#}
+{% block title %}{{ t("export.title") }} · {{ t("app.name") }}{% endblock %}
+{% block heading %}{{ t("export.title") }}{% endblock %}
+{% block content %}
+<div class="sheet sheet--card sheet--export">
+  <p class="form-hint form-hint--lead">{{ t("export.intro") }}</p>
+
+  <div class="ds-cards">
+    {% for slug, ds in datasets.items() %}
+    <a class="ds-card{{ ' is-active' if slug == spec.slug else '' }}"{% if slug == spec.slug %} aria-current="true"{% endif %}
+       href="/app/export?ds={{ slug }}">
+      <span class="ds-card__title">{{ t(ds.title_key) }}</span>
+      <span class="ds-card__desc">{{ t(ds.desc_key) }}</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div id="export-panel">
+    {% include "v2/partials/export_panel.html" %}
+  </div>
+</div>
+{% endblock %}
