@@ -696,8 +696,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.vocab.failure.title": "Failure vocabulary (C2)",
         "admin.vocab.failure.hint": (
             "Shared failure controlled vocabulary — two separate axes, never merged. "
-            "mfc = why material was rejected (product/yield); efc = why the machine "
-            "faulted (equipment). Seeded via CLI (load-mes-failmodes / load-efc-codes)."
+            "Failure mode = why material was rejected (product/yield); fault cause = why the "
+            "machine faulted (equipment). Seeded via CLI (load-mes-failmodes / load-efc-codes)."
         ),
         "admin.vocab.mfc.axis": "product / yield axis",
         "admin.vocab.mfc.station": "Station",
@@ -1677,8 +1677,8 @@ CATALOG: dict[str, dict[str, str]] = {
         # C2 失效受控詞彙(唯讀;兩軸永不合併)
         "admin.vocab.failure.title": "失效受控詞彙(C2)",
         "admin.vocab.failure.hint": (
-            "共用失效受控詞彙 —— 兩條獨立軸,永不合併。mfc = 料為何被判退(產品/良率軸);"
-            "efc = 機台為何故障(設備軸)。種子走 CLI(load-mes-failmodes / load-efc-codes)。"
+            "共用失效受控詞彙 —— 兩條獨立軸,永不合併。失效模式 = 料為何被判退(產品/良率軸);"
+            "故障原因 = 機台為何故障(設備軸)。種子走 CLI(load-mes-failmodes / load-efc-codes)。"
         ),
         "admin.vocab.mfc.axis": "產品/良率軸",
         "admin.vocab.mfc.station": "站別",
@@ -2014,7 +2014,7 @@ CATALOG: dict[str, dict[str, str]] = {
         # D6 確認故障真因(efc 軸)
         "wo.confirmed_reason": "確認故障原因",
         "wo.confirmed_reason.none": "(未確認)",
-        "wo.confirmed_reason.hint": "選填 —— 有把握才選(設備故障碼 efc)。",
+        "wo.confirmed_reason.hint": "選填 —— 有把握才選(設備故障原因碼)。",
         "wo.confirmed_reason.search": "輸入關鍵字搜尋(空格分隔多字)…",
         "wo.confirmed_reason.used": "曾用",
         "wo.confirmed_reason.nomatch": "查無相符碼",
@@ -2658,8 +2658,8 @@ CATALOG: dict[str, dict[str, str]] = {
         # C2 từ vựng lỗi(chỉ đọc;hai trục không bao giờ gộp)
         "admin.vocab.failure.title": "Từ vựng lỗi (C2)",
         "admin.vocab.failure.hint": (
-            "Từ vựng lỗi dùng chung — hai trục riêng biệt, không bao giờ gộp. mfc = tại sao "
-            "vật liệu bị loại (sản phẩm/năng suất); efc = tại sao máy lỗi (thiết bị). "
+            "Từ vựng lỗi dùng chung — hai trục riêng biệt, không bao giờ gộp. Dạng hỏng = tại sao "
+            "vật liệu bị loại (sản phẩm/năng suất); nguyên nhân lỗi = tại sao máy lỗi (thiết bị). "
             "Seed qua CLI (load-mes-failmodes / load-efc-codes)."
         ),
         "admin.vocab.mfc.axis": "trục sản phẩm / năng suất",
@@ -3035,7 +3035,9 @@ CATALOG: dict[str, dict[str, str]] = {
         # D6 xác nhận nguyên nhân hỏng (trục efc)
         "wo.confirmed_reason": "Nguyên nhân hỏng đã xác nhận",
         "wo.confirmed_reason.none": "(chưa xác nhận)",
-        "wo.confirmed_reason.hint": "Tùy chọn — chỉ chọn khi chắc chắn (mã lỗi thiết bị efc).",
+        "wo.confirmed_reason.hint": (
+            "Tùy chọn — chỉ chọn khi chắc chắn (mã nguyên nhân lỗi thiết bị)."
+        ),
         "wo.confirmed_reason.search": "Nhập từ khóa để tìm (cách nhau bằng dấu cách)…",
         "wo.confirmed_reason.used": "đã dùng",
         "wo.confirmed_reason.nomatch": "Không có mã phù hợp",
