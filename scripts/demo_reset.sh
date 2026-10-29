@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Reset the public demo site to a clean, freshly seeded state.
 #
-#   1. docker compose down -v --remove-orphans   (wipes the database volume)
+#   1. docker compose down --remove-orphans      then `docker volume rm <project>_pgdata`
+#                                                (wipes ONLY the database volume; the gateway's
+#                                                budget/quota ledger `hermes_data` must survive
+#                                                resets or the daily/monthly caps mean nothing)
 #   1b. docker compose build                      (no-op when nothing changed; picks up a git pull)
 #   2. docker compose up -d --wait <every service except seed>
 #                                                (db -> migrations -> app [-> edge], wait for healthy)
@@ -20,6 +23,7 @@
 #
 # Env:
 #   COMPOSE_BIN   compose command to use  (default: "docker compose")
+#   DOCKER_BIN    docker CLI for `volume rm`  (default: "docker")
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,8 +35,14 @@ COMPOSE="${COMPOSE_BIN:-docker compose}"
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] demo-reset: $*"; }
 
 log "resetting demo stack in $ROOT"
+# 不用 `down -v`:那會連 hermes_data(gateway 的預算/配額帳本)一起清掉,每 30 分鐘歸零
+# 等於沒有預算上限。只刪資料庫 volume;專案名從 compose config 第一行 `name:` 取。
 # shellcheck disable=SC2086
-$COMPOSE down -v --remove-orphans
+$COMPOSE down --remove-orphans
+# shellcheck disable=SC2086
+PROJECT="$($COMPOSE config | sed -n 's/^name: //p' | head -n1)"
+[ -n "$PROJECT" ] || { log "cannot determine compose project name"; exit 1; }
+${DOCKER_BIN:-docker} volume rm -f "${PROJECT}_pgdata" >/dev/null
 # `up` 不會因原始碼變了就重建映像;明確 build 一次,layer cache 命中時只花幾秒,
 # 但 git pull 後的程式碼與依賴變更一定會進到下一輪(2026-10-25 首次部署實測教訓)。
 # shellcheck disable=SC2086

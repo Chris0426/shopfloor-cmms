@@ -1,8 +1,10 @@
 # 公開部署用的 compose override,只在對外示範站使用;疊在 docker-compose.yml 之上。
 #
-#   啟用方式:repo 根目錄放一個 .env(已被 .gitignore 排除),內容兩行:
+#   啟用方式:repo 根目錄放一個 .env(已被 .gitignore 排除),內容:
 #     COMPOSE_FILE=docker-compose.yml:docker-compose.public.yml
 #     CMMS_PUBLIC_BASE_URL=https://work.example.com
+#     ANTHROPIC_API_KEY=<值不入 git>
+#     HERMES_GATEWAY_SECRET=<值不入 git>
 #   之後所有 `docker compose ...`(含 scripts/demo_reset.sh)都會自動帶上本檔。
 #
 # 與本地示範的差別:
@@ -10,16 +12,23 @@
 #   - edge(nginx)負責 per-IP 限流,是唯一綁到 host 的服務,且只綁 127.0.0.1:8000。
 #   - host 上的 Caddy 終結 TLS,再 reverse_proxy 到 127.0.0.1:8000
 #     (見 infra/demo/Caddyfile.snippet;限流參數見 infra/demo/nginx.conf)。
+#   - hermes(助理 gateway,Anthropic 後端)只在內網,不綁 host;經 app 的 /mcp 操作 CMMS。
+#     兩把祕密 ANTHROPIC_API_KEY / HERMES_GATEWAY_SECRET 跟 COMPOSE_FILE、CMMS_PUBLIC_BASE_URL
+#     一樣放在根目錄 .env。缺值時 compose 照常起(demo_reset.sh 在沒有祕密的 host 也能跑),
+#     gateway 自己 fail-closed 回 503,app 則顯示助理「尚未啟用」。
 #
 # `!override` 需要 Docker Compose v2.24.4 以上。
 
 services:
   app:
     ports: !override []
-    # compose 合併 override 時 mapping 是逐鍵合併:這裡只新增一個鍵,base 的 *app-env 其餘鍵照留。
+    # compose 合併 override 時 mapping 是逐鍵合併:這裡只新增鍵,base 的 *app-env 其餘鍵照留。
     environment:
       # 容器內看到的代理來源是 docker 網段,uvicorn 預設只信 127.0.0.1;放行讓 X-Forwarded-* 生效
       FORWARDED_ALLOW_IPS: "*"
+      # 助理 gateway 位址(內網服務名)與共享祕密;祕密讀非 CMMS_ 前綴的共享名(見 src/cmms/config.py)
+      CMMS_HERMES_GATEWAY_URL: http://hermes:8080
+      HERMES_GATEWAY_SECRET: ${HERMES_GATEWAY_SECRET}
   edge:
     image: nginx:1.27-alpine
     ports:
@@ -34,3 +43,30 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+  hermes:
+    build: ./infra/hermes
+    # 不綁 host port:只有 app 經內網呼叫它。
+    environment:
+      HERMES_BACKEND: anthropic
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      HERMES_GATEWAY_SECRET: ${HERMES_GATEWAY_SECRET}
+      # gateway 自己當 MCP client 打 app 的容器內 port(cmms MCP 已對內網 host 關閉 DNS-rebinding 檢查)
+      CMMS_MCP_URL: http://app:8080/mcp
+      # 預算帳本(SQLite)落在 named volume;程式預設值本來就是這個路徑,寫出來讓掛載點一目了然
+      HERMES_LEDGER_PATH: /data/ledger.sqlite
+      # 預算 / 限流沿用程式預設(見 infra/hermes/app/gateway.py):HERMES_DAILY_BUDGET_USD、
+      # HERMES_MONTHLY_BUDGET_USD、HERMES_DAILY_QUESTIONS_PER_CLIENT、HERMES_MAX_CONCURRENCY、
+      # HERMES_LLM_TIMEOUT;要調整時在這裡加鍵即可。
+    volumes:
+      - hermes_data:/data
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  hermes_data:

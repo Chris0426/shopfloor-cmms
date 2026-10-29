@@ -35,7 +35,8 @@ under `[env]`, in git, on purpose.
 | Key | Purpose |
 |---|---|
 | `HERMES_GATEWAY_SECRET` | Same value as on the app. The gateway is private-network-only; this is defence in depth, not the only control |
-| model provider credentials | Persisted on a volume, not in the image. See `infra/hermes/README.md` |
+| model provider credentials (`codex` backend) | OpenAI OAuth credentials persisted on the gateway volume, not in the image. See `infra/hermes/README.md` |
+| `ANTHROPIC_API_KEY` | `anthropic` backend only. A dedicated key for this gateway, passed via environment / the repo-root `.env` only (never in git, logs, chat or commits). Console: auto-reload off, no credit pre-purchase. Spend is capped by the gateway's own daily/monthly budgets (`HERMES_DAILY_BUDGET_USD` / `HERMES_MONTHLY_BUDGET_USD`) plus the account balance. Missing ⇒ gateway returns **503** |
 
 ## Backup (`shopfloor-cmms-backup`)
 
@@ -50,6 +51,9 @@ under `[env]`, in git, on purpose.
 
 Rotating any key is `flyctl secrets set` + a rolling restart. Two have extra consequences worth
 stating out loud:
+
+- **`ANTHROPIC_API_KEY`** — issue a new key in the Console, replace the env value, restart the
+  gateway, then disable the old key. Nothing else depends on it.
 
 - **`CMMS_CREDENTIAL_MASTER_KEY`** — rotating it without re-encrypting invalidates every stored
   user credential. Users are prompted to re-enter their PAT. This is the correct failure mode, and

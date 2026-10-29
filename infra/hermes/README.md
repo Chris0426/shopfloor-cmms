@@ -19,6 +19,10 @@ dock(web,之後接)
 - **scoped token 帶身分**:每請求把該使用者 scoped token 以環境變數 `CMMS_MCP_TOKEN`
   注入 codex 子行程;codex config `mcp_servers.cmms.bearer_token_env_var` 指向它。
   **token 永不入 argv / log**。
+- **後端可切換**(`HERMES_BACKEND`,預設 `codex`):`codex` = 上述 OpenAI Codex CLI,需要 volume
+  `/data/codex` 上的 OAuth 憑證;`anthropic` = 經 Anthropic SDK 呼叫 Claude,需要環境變數
+  `ANTHROPIC_API_KEY`,另在 `/data` 放 SQLite 帳本(`ledger.sqlite`:用量、預算、每來源每日問題數)。
+  公開示範站(`docker-compose.public.yml`)跑 `anthropic`。
 - **治理不隨 agent 變**:gateway 對 cmms 只走 `/mcp`(護欄 #1),寫入=提案→admin
   confirm(ADR-016/027,cmms domain 強制,gateway 縮不掉);EID 不猜(ADR-027/D9,persona 硬性)。
 
@@ -33,22 +37,65 @@ dock(web,之後接)
 
 ## 環境變數(非祕密,`[env]` 在 fly.hermes.toml)
 
-| 鍵 | 預設 | 說明 |
-|---|---|---|
-| `CMMS_MCP_URL` | `https://cmms.example.com/mcp` | codex 連的 cmms remote MCP 端點。 |
-| `HERMES_MODEL` | (未設 = codex 預設) | `/chat` 模型覆寫(如 `gpt-5.4-mini`);`/mrq-description` 不吃。以 secret 設/撤即可 A/B(免重 build)。 |
-| `CODEX_HOME` | `/data/codex` | codex OAuth 憑證 / config / 快取(在 volume)。 |
-| `HERMES_CODEX_TIMEOUT` | `120` | 單次 codex exec 逾時秒數(逾時強殺 → 502)。prod `fly.hermes.toml` 設 `180`。 |
-| `HERMES_MAX_CONCURRENCY` | `2` | 併發 codex 上限(asyncio semaphore)。 |
+「後端」欄:通用 = 兩個後端皆用;codex / anthropic = 僅該後端生效。
+
+| 鍵 | 預設 | 後端 | 說明 |
+|---|---|---|---|
+| `HERMES_BACKEND` | `codex` | 通用 | 後端選擇:`codex` / `anthropic`(其他值視為 `codex`)。`/health` 會回報目前後端。 |
+| `CMMS_MCP_URL` | `https://cmms.example.com/mcp` | 通用 | 連的 cmms remote MCP 端點。 |
+| `HERMES_LLM_TIMEOUT` | `120` | 通用 | 單次 LLM 請求整體逾時秒數(codex 逾時強殺 → 502)。舊名 `HERMES_CODEX_TIMEOUT` 仍相容。prod `fly.hermes.toml` 設 `180`。 |
+| `HERMES_MAX_CONCURRENCY` | `2` | 通用 | 併發上限(asyncio semaphore)。 |
+| `HERMES_MODEL` | (未設 = codex 預設) | codex | `/chat` 模型覆寫(如 `gpt-5.4-mini`);`/mrq-description` 不吃。以 secret 設/撤即可 A/B(免重 build)。 |
+| `CODEX_HOME` | `/data/codex` | codex | codex OAuth 憑證 / config / 快取(在 volume)。 |
+| `HERMES_MODEL_CHAT` | `claude-haiku-5-5` | anthropic | `/chat` 一般問題的模型。 |
+| `HERMES_MODEL_TEXT` | `claude-haiku-5-5` | anthropic | `/mrq-description`(純文字、零工具)的模型。 |
+| `HERMES_MODEL_DEEP` | `claude-sonnet-5-5` | anthropic | 請求帶 `tier="deep"`(或訊息含「詳細分析」「deep analysis」等)時改用。 |
+| `HERMES_LEDGER_PATH` | `/data/ledger.sqlite` | anthropic | SQLite 成本帳本路徑(須在持久 volume 上)。 |
+| `HERMES_DAILY_BUDGET_USD` | `0.5` | anthropic | 每日(UTC)預算上限,美元;達上限 → 503。 |
+| `HERMES_MONTHLY_BUDGET_USD` | `10.0` | anthropic | 每月(UTC)預算上限,美元;達上限 → 503。 |
+| `HERMES_DAILY_QUESTIONS_PER_CLIENT` | `10` | anthropic | `/chat` 每個來源每個 UTC 日的問題數上限;超過 → 429。 |
+
+anthropic 後端的工具迴圈上限為 8 輪(`CHAT_MAX_ITERATIONS`);超限仍要呼叫工具 → 502。
+模型回 `refusal` 時回固定拒答句(依 locale),不假裝有答案。
 
 ## 祕密
 
-| 鍵 | 說明 |
-|---|---|
-| `HERMES_GATEWAY_SECRET` | `/chat` 的共享 secret(常數時間比較)。**同一把也要設在 cmms app**,dock 接線時 cmms 帶 `X-Hermes-Secret` 打本 gateway。未設 → `/chat` 一律 503(fail-closed)。 |
+| 鍵 | 後端 | 說明 |
+|---|---|---|
+| `HERMES_GATEWAY_SECRET` | 通用 | `/chat` 的共享 secret(常數時間比較)。**同一把也要設在 cmms app**,dock 接線時 cmms 帶 `X-Hermes-Secret` 打本 gateway。未設 → `/chat` 一律 503(fail-closed)。 |
+| `ANTHROPIC_API_KEY` | anthropic | Anthropic API 金鑰,**只**從這個環境變數讀(未設 → 503)。不進 git / log / 對話 / commit message。 |
 
-產生:`python -c "import secrets; print(secrets.token_urlsafe(32))"`。登記見
+產生 gateway secret:`python -c "import secrets; print(secrets.token_urlsafe(32))"`。登記見
 `../secrets-manifest.md`。
+
+### Anthropic 金鑰流程
+
+1. 在 Anthropic Console 為本 gateway 建一把**專用** key(不與其他用途共用)。
+2. **不要開啟自動儲值(auto-reload),也不要預先多買額度。** 成本天花板 = 上列環境變數預算
+   + 帳戶當下餘額,兩者取小。
+3. 金鑰只經環境變數傳入:compose 從 repo 根目錄 `.env` 讀取(`.env` 不入 git);
+   不貼進 git、log、對話或 commit message。
+4. 輪替:在 Console 發新 key → 換掉環境變數值並重啟 hermes → 停用舊 key。
+5. 冒煙測試:`export ANTHROPIC_API_KEY=...`(當下 shell 設,不寫進檔案)後執行
+   `scripts/hermes_smoke.py`;會印出模型、usage、估算成本與一列帳本紀錄。
+
+### 成本與限額(anthropic)
+
+- `GET /health` 回報 `backend`,anthropic 時另有 `budget.daily` / `budget.monthly`(各含 `spent_usd` / `limit_usd` / `state`=ok|warning|exhausted)。
+- 預算用盡 → `/chat` 與 `/mrq-description` 都回 **503**(cmms 顯示「預算」氣泡);fail-closed,呼叫前就拒絕。
+  達 80% 為 warning。
+- 每來源每日問題數超限 → **429** + `Retry-After`(到 UTC 午夜的秒數;cmms 顯示「額度」氣泡)。
+  來源鍵(web = 使用者 IP)以 gateway secret 做 HMAC-SHA256,只存雜湊前綴,不存原值。
+- 價格寫死在 `app/ledger.py` 的 `PRICES`,2026-10-29 核對(USD / 百萬 token):
+
+| 模型 | input | output | cache write | cache read |
+|---|---|---|---|---|
+| `claude-haiku-5-5` | 0.10 | 0.50 | 0.125 | 0.01 |
+| `claude-sonnet-5-5` | 2.00 | 10.00 | 2.50 | 0.20 |
+| `claude-opus-5-5` | 4.00 | 20.00 | 5.00 | 0.20 |
+
+  Haiku 單次 prompt(input + cache read + cache write)> 100K token 時整筆改用長層價
+  (0.50 / 2.50 / 0.625 / 0.05)。未列在表上的模型以表中最貴者估算(寧可高估、提早熔斷)。
 
 ## 部署 / 驗證
 
@@ -82,6 +129,14 @@ flyctl ssh console -a shopfloor-cmms
 #   curl -s -X POST http://shopfloor-cmms-hermes.flycast:8080/chat \
 #     -H "X-Hermes-Secret: <secret>" -H "content-type: application/json" \
 #     -d '{"message":"ping cmms","scoped_token":"<mcp scoped token>"}'
+```
+
+### docker-compose 變體(anthropic 後端)
+
+```bash
+# 在 repo 根目錄 .env 放入 ANTHROPIC_API_KEY 與 HERMES_GATEWAY_SECRET(.env 不入 git)
+docker compose up -d --build hermes
+docker compose exec hermes curl -s http://127.0.0.1:8080/health
 ```
 
 > scoped token 的發放見 `docs/integrations/agent-pilot.md`(`cmms mcp-token`)。dock 正式

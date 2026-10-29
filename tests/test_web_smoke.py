@@ -4353,6 +4353,85 @@ def test_assistant_phase2_gateway_error_is_friendly_with_retry_not_persisted(as_
     assert "assistant" not in add_cap                        # gateway 失敗 → 不落 assistant
 
 
+def _fake_httpx_status(status, body, capture):
+    """假 httpx.AsyncClient:記錄 post 的 json,回指定狀態碼 + JSON body(真 httpx.Response)。"""
+    import httpx as _httpx
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            capture["json"] = json
+            return _httpx.Response(status, json=body, request=_httpx.Request("POST", url))
+
+    return _Client
+
+
+def _phase2_against_gateway(monkeypatch, status, body):
+    """phase 2 打假 gateway(指定狀態碼 / body);回 (response, 送出的 json, add_cap)。"""
+    cap: dict = {}
+    add_cap: dict = {}
+    monkeypatch.setattr(web_routes, "get_settings", lambda: _hermes_settings())
+
+    async def _mint(self, *, session_token, agent, scope):
+        return "TOK-SECRET"
+
+    monkeypatch.setattr(web_routes.IdentityService, "mint_scoped_token", _mint)
+    monkeypatch.setattr(web_routes.httpx, "AsyncClient", _fake_httpx_status(status, body, cap))
+    conv = SimpleNamespace(id=77, closed_at=None)
+    umsg = SimpleNamespace(id=101, conversation_id=77, role="user", content="hi")
+    _patch_phase2(monkeypatch, conv=conv, umsg=umsg, nxt=None, add_capture=add_cap)
+    r = client.post("/app/assistant/77/reply", data={"message_id": "101"})
+    return r, cap.get("json"), add_cap
+
+
+def test_assistant_phase2_quota_429_shows_quota_bubble_no_retry(as_user, monkeypatch):
+    """gateway 429(當日問題數上限)→ quota 泡泡、無重試鈕、不落 assistant。"""
+    r, _, add_cap = _phase2_against_gateway(
+        monkeypatch, 429, {"detail": "daily question limit reached"}
+    )
+    assert r.status_code == 200
+    assert "question limit. It resets at midnight UTC" in r.text  # assistant.quota(en)
+    assert "unavailable right now" not in r.text
+    assert 'hx-post="/app/assistant/77/reply"' not in r.text  # 今天內重試無效 → 無重試鈕
+    assert "assistant" not in add_cap
+
+
+def test_assistant_phase2_budget_503_shows_budget_bubble_no_retry(as_user, monkeypatch):
+    """gateway 503 + 預算用罄 → budget 泡泡、無重試鈕;非預算 503 → 一般錯誤 + 重試鈕。"""
+    r, _, add_cap = _phase2_against_gateway(
+        monkeypatch, 503, {"detail": "daily budget exhausted"}
+    )
+    assert r.status_code == 200
+    assert "reached its usage budget" in r.text              # assistant.budget(en)
+    assert "unavailable right now" not in r.text
+    assert 'hx-post="/app/assistant/77/reply"' not in r.text
+    assert "assistant" not in add_cap
+
+    r, _, add_cap = _phase2_against_gateway(monkeypatch, 503, {"detail": "ledger unavailable"})
+    assert r.status_code == 200
+    assert "unavailable right now" in r.text                 # assistant.error
+    assert "usage budget" not in r.text
+    assert 'hx-post="/app/assistant/77/reply"' in r.text     # 暫時性錯誤 → 可重送
+    assert '{"message_id": 101}' in r.text
+    assert "assistant" not in add_cap
+
+
+def test_assistant_phase2_payload_carries_client_id(as_user, monkeypatch):
+    """phase 2 送 gateway 的 body 帶 client_id(= 請求來源 IP;TestClient 為 "testclient")。"""
+    r, sent, _ = _phase2_against_gateway(monkeypatch, 200, {"reply": "ok"})
+    assert r.status_code == 200
+    assert sent["client_id"] == "testclient"
+    assert sent["message"] == "hi"
+
+
 def test_assistant_phase2_replay_returns_existing_without_gateway(as_user, monkeypatch):
     """phase 2 重放(該 user 訊息之後已有 assistant)→ 直接回既存回覆,不鑄 token、不打 gateway。"""
     called = {"http": False, "mint": False}

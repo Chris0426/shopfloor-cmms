@@ -451,3 +451,67 @@ async def test_process_question_gateway_empty_reply_unavailable(monkeypatch):
 
     await tw._process_telegram_question("111", "alice", "hi")
     assert len(sender.sent) == 1                              # 只送一則「暫時無法回應」
+
+
+def _patch_question_flow(monkeypatch, user, sender, added):
+    """背景提問:已有開啟中 "Telegram" 對話 + 假 token;assistant 落 DB 記到 added。"""
+    monkeypatch.setattr(tw, "get_telegram_sender", lambda: sender)
+    monkeypatch.setattr(tw, "get_settings", lambda: _settings())
+    monkeypatch.setattr("cmms.db.get_sessionmaker", lambda: (lambda: _CtxSession(user)))
+
+    async def _list_open(self, user_id):
+        return [SimpleNamespace(id=1, title="Telegram")]
+
+    async def _add_user(self, *, user_id, conversation_id, content, actor):
+        return SimpleNamespace(id=1), SimpleNamespace(id=10, content=content)
+
+    async def _hist(self, user_id, conv_id, max_turns=None, before_message_id=None):
+        return []
+
+    async def _add_asst(self, *, user_id, conversation_id, content, actor):
+        added["content"] = content
+        return SimpleNamespace(id=11)
+
+    async def _mint(self, *, username, agent, scope, ttl_seconds=None, at=None):
+        return "TOK", datetime.now(UTC)
+
+    monkeypatch.setattr(tw.AssistantService, "list_open_conversations", _list_open)
+    monkeypatch.setattr(tw.AssistantService, "add_user_message", _add_user)
+    monkeypatch.setattr(tw.AssistantService, "recent_history", _hist)
+    monkeypatch.setattr(tw.AssistantService, "add_assistant_message", _add_asst)
+    monkeypatch.setattr(tw.IdentityService, "mint_scoped_token_for_user", _mint)
+
+
+@pytest.mark.parametrize(
+    ("status", "payload", "key"),
+    [
+        (429, {"detail": "daily question limit reached"}, "assistant.quota"),
+        (503, {"detail": "daily budget exhausted"}, "assistant.budget"),
+        (503, {"detail": "monthly budget exhausted"}, "assistant.budget"),
+        (503, {"detail": "ledger unavailable"}, "tg.reply.unavailable"),   # 非預算 503 → 一般錯誤
+    ],
+)
+async def test_process_question_gateway_limit_maps_to_message(monkeypatch, status, payload, key):
+    user = _user(ui_locale="en")
+    sender = InMemoryTelegramSender()
+    added: dict = {}
+    _patch_question_flow(monkeypatch, user, sender, added)
+    _FakeClient.resp = _FakeResp(payload, status=status)
+    monkeypatch.setattr(tw.httpx, "AsyncClient", _FakeClient)
+
+    await tw._process_telegram_question("111", "alice", "hi")
+    assert [s["text"] for s in sender.sent] == [tw.translate(key, "en")]
+    assert "content" not in added                             # 限流 / 熔斷 / 錯誤 → 不落 assistant
+
+
+async def test_process_question_payload_carries_tg_client_id(monkeypatch):
+    user = _user(ui_locale="en")
+    sender = InMemoryTelegramSender()
+    added: dict = {}
+    _patch_question_flow(monkeypatch, user, sender, added)
+    _FakeClient.resp = _FakeResp({"reply": "ok"})
+    monkeypatch.setattr(tw.httpx, "AsyncClient", _FakeClient)
+
+    await tw._process_telegram_question("111", "alice", "hi")
+    assert _FakeClient.captured["json"]["client_id"] == "tg:111"   # 每來源上限的來源鍵
+    assert added["content"] == "ok"

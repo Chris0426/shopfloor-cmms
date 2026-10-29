@@ -6,6 +6,8 @@
 # --device-auth 一次性裝置流),憑證持久化在 Fly volume 掛載的 CODEX_HOME=/data/codex。
 # 服務以非 root(hermes)身分跑;/data volume 首次掛載為 root 擁有,entrypoint 於啟動時
 # 修正擁有權後再 gosu 降權(見 entrypoint.sh)。
+# 映像同時帶兩個後端(HERMES_BACKEND=codex|anthropic,預設 codex):codex CLI(OAuth 憑證在
+# volume)與 Anthropic SDK(金鑰由 ANTHROPIC_API_KEY 環境變數注入,絕不烤進映像)。
 
 FROM python:3.12-slim
 
@@ -17,8 +19,10 @@ RUN apt-get update \
 # OpenAI Codex CLI(headless `codex exec` + remote MCP + 訂閱 OAuth）。
 RUN npm install -g @openai/codex
 
-# gateway 依賴(僅 fastapi + uvicorn;gateway.py 不依賴 cmms/其他套件)。
+# gateway 依賴(fastapi + uvicorn;gateway.py 不依賴 cmms/其他套件)。
 RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.32"
+# Anthropic 後端(SDK + MCP extra + mcp);codex 後端不使用但一併安裝。
+RUN pip install --no-cache-dir "anthropic[mcp]>=2.3.0" "mcp"
 
 # CODEX_HOME 指向 volume → OAuth 憑證(auth.json)與 config 持久化跨重啟。
 ENV CODEX_HOME=/data/codex
