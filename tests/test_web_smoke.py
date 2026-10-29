@@ -4114,6 +4114,8 @@ def _hermes_settings(url="http://gw.internal:8080", secret="HSECRET-XYZ"):
 def _fake_httpx_ok(reply, capture):
     """假 httpx.AsyncClient:記錄 post 的 url/headers/json,回固定 reply(成功 2xx)。"""
     class _Resp:
+        status_code = 200
+
         def raise_for_status(self):
             return None
 

@@ -49,6 +49,17 @@ _logger = logging.getLogger("cmms.web.telegram")
 _TG_CONV_TITLE = "Telegram"
 
 
+
+def _gateway_limit_key(resp: httpx.Response) -> str | None:
+    """gateway 429(當日問題數上限)/ 503 預算用罄 → 對應的 i18n key;其餘 None。"""
+    if resp.status_code == 429:
+        return "assistant.quota"
+    if resp.status_code == 503:
+        with contextlib.suppress(ValueError, AttributeError):
+            if "budget" in str((resp.json() or {}).get("detail", "")):
+                return "assistant.budget"
+    return None
+
 def _ok() -> JSONResponse:
     """Telegram 期望的 2xx(否則重送);一切容錯忽略走此。"""
     return JSONResponse({"ok": True})
@@ -262,6 +273,8 @@ async def _process_telegram_question(chat_id: str, user_id: str, text: str) -> N
                 "history": history,
                 "locale": user.ui_locale,
                 "jira_locale": user.jira_output_locale,
+                # gateway 每來源每日問題上限的來源鍵(Telegram 沒有使用者 IP);gateway 只存雜湊
+                "client_id": f"tg:{chat_id}",
             }
             try:
                 async with httpx.AsyncClient(
@@ -272,6 +285,10 @@ async def _process_telegram_question(chat_id: str, user_id: str, text: str) -> N
                         headers={"X-Hermes-Secret": settings.hermes_gateway_secret},
                         json=payload,
                     )
+                limited = _gateway_limit_key(resp)
+                if limited:  # 限流 / 預算熔斷:誠實告知(今天內重試無效)
+                    await sender.send(chat_id=chat_id, text=translate(limited, locale))
+                    return
                 resp.raise_for_status()
                 reply = str((resp.json() or {}).get("reply") or "").strip()
             except (httpx.HTTPError, ValueError, TypeError) as exc:

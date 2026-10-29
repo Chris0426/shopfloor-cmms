@@ -1,0 +1,427 @@
+"""Hermes gateway 的 Anthropic 後端單元測試(零網路:假客戶端、假 MCP 工具、暫存帳本)。
+
+gateway / llm_anthropic / ledger 是獨立小服務(不在 src/cmms 套件內),以檔案路徑載入。
+
+驗證面:
+- 組裝:persona 為 system 第一塊並掛快取標記、每請求提示在其後;messages[] 結構;模型路由;
+  Sonnet / Opus 帶 server-side fallback、Haiku 不帶。
+- 計價:Haiku 一般層 / 長 prompt 層、Sonnet 快取讀價、未知模型以最貴價估。
+- 帳本:日 / 月預算 80% 警告、100% 熔斷;每來源每日問題上限與跨日歸零;來源鍵不落原值。
+- 錯誤對應:金鑰 / 權限 / 模型錯 → 503 類;429 / 5xx / 400 / 連線 / 逾時 → 502 類。
+- chat():usage 跨多次呼叫加總、拒答回固定句、工具迴圈超限 → 502 類且已花費仍帶出。
+- 端點(HERMES_BACKEND=anthropic):/health 預算欄、/chat 成功記帳、429 帶 Retry-After、
+  預算用罄 503、金鑰未設 503、後端錯誤 502、/mrq-description 成功;token 與金鑰不落 log。
+"""
+
+from __future__ import annotations
+
+import contextlib
+import datetime as dt
+import importlib.util
+import logging
+import pathlib
+import sys
+from types import SimpleNamespace
+
+import anthropic
+import httpx2
+import pytest
+from fastapi.testclient import TestClient
+
+_APP_DIR = pathlib.Path(__file__).resolve().parents[1] / "infra" / "hermes" / "app"
+
+
+def _load(name: str, key: str):
+    spec = importlib.util.spec_from_file_location(key, _APP_DIR / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[key] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+ledger = _load("ledger", "hermes_ledger")
+llm = _load("llm_anthropic", "hermes_llm_anthropic")
+gw = _load("gateway", "hermes_gateway_anthropic")
+
+SECRET = "test-secret"
+TOKEN = "scoped-token-SHOULD-NOT-LEAK"
+API_KEY = "sk-ant-test-SHOULD-NOT-LEAK"
+
+
+# ── 假物件 ───────────────────────────────────────────────────────────────────
+def _msg(text="", stop="end_turn", model="claude-haiku-5-5", inp=100, out=20, cr=0, cw=0):
+    content = [SimpleNamespace(type="text", text=text)] if text else []
+    usage = SimpleNamespace(
+        input_tokens=inp, output_tokens=out,
+        cache_read_input_tokens=cr, cache_creation_input_tokens=cw,
+    )
+    return SimpleNamespace(content=content, stop_reason=stop, model=model, usage=usage)
+
+
+class _Runner:
+    def __init__(self, messages, exc=None):
+        self._messages = list(messages)
+        self._exc = exc
+
+    def __aiter__(self):
+        return self._gen()
+
+    async def _gen(self):
+        for m in self._messages:
+            yield m
+        if self._exc is not None:
+            raise self._exc
+
+
+class FakeClient:
+    """記錄 tool_runner / messages.create 收到的參數;回預先排好的訊息。"""
+
+    def __init__(self, messages=(), exc=None, text_message=None, text_exc=None):
+        self.runner_kwargs = None
+        self.create_kwargs = None
+        outer = self
+
+        def tool_runner(**kwargs):
+            outer.runner_kwargs = kwargs
+            return _Runner(messages, exc)
+
+        async def create(**kwargs):
+            outer.create_kwargs = kwargs
+            if text_exc is not None:
+                raise text_exc
+            return text_message
+
+        self.beta = SimpleNamespace(messages=SimpleNamespace(tool_runner=tool_runner))
+        self.messages = SimpleNamespace(create=create)
+
+
+@contextlib.asynccontextmanager
+async def fake_tools(mcp_url, scoped_token):
+    yield ["tool-a", "tool-b"]
+
+
+def _resp(status, headers=None):
+    return httpx2.Response(status, headers=headers or {}, request=httpx2.Request("POST", "https://x"))
+
+
+class Clock:
+    def __init__(self, when):
+        self.when = when
+
+    def __call__(self):
+        return self.when
+
+
+# ── 組裝 ─────────────────────────────────────────────────────────────────────
+def test_build_system_caches_persona_and_keeps_extras_after():
+    blocks = llm.build_system("PERSONA", ["lang: zh-TW", ""])
+    assert blocks[0] == {"type": "text", "text": "PERSONA", "cache_control": {"type": "ephemeral"}}
+    assert blocks[1] == {"type": "text", "text": "lang: zh-TW"}
+    assert "cache_control" not in blocks[1]
+    assert llm.build_system("P", []) == [blocks[0] | {"text": "P"}]
+
+
+def test_build_messages_real_turns_and_leading_assistant_dropped():
+    msgs = llm.build_messages(
+        [("assistant", "hi"), ("user", "q1"), ("assistant", "a1"), ("user", "")], "q2"
+    )
+    assert msgs == [
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "user", "content": "q2"},
+    ]
+
+
+def test_model_routing_and_env_override(monkeypatch):
+    monkeypatch.delenv("HERMES_MODEL_CHAT", raising=False)
+    monkeypatch.delenv("HERMES_MODEL_DEEP", raising=False)
+    assert llm.pick_chat_model("open orders?", None) == "claude-haiku-5-5"
+    assert llm.pick_chat_model("open orders?", "deep") == "claude-sonnet-5-5"
+    assert llm.pick_chat_model("請詳細分析這台機台", None) == "claude-sonnet-5-5"
+    monkeypatch.setenv("HERMES_MODEL_CHAT", "claude-sonnet-5-5")
+    assert llm.pick_chat_model("hi", None) == "claude-sonnet-5-5"
+    assert "opus" not in llm.DEFAULT_MODEL_CHAT + llm.DEFAULT_MODEL_TEXT + llm.DEFAULT_MODEL_DEEP
+
+
+def test_fallback_only_for_sonnet_and_opus():
+    assert llm.fallback_kwargs("claude-haiku-5-5") == {}
+    kw = llm.fallback_kwargs("claude-sonnet-5-5")
+    assert kw == {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+
+
+def test_make_client_reads_only_anthropic_api_key(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(llm.LLMConfigError):
+        llm.make_client()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", API_KEY)
+    client = llm.make_client()
+    assert client.api_key == API_KEY and client.max_retries == 2
+
+
+# ── 計價 ─────────────────────────────────────────────────────────────────────
+def test_estimate_usd_haiku_tiers_and_sonnet_cache_read():
+    # Haiku 一般層(prompt 剛好 100K,不超過門檻):100K in + 1M out = 0.01 + 0.50
+    assert ledger.estimate_usd("claude-haiku-5-5", 100_000, 1_000_000, 0, 0) == pytest.approx(0.51)
+    # prompt(input + 快取讀 + 快取寫)> 100K → 整筆改長層價
+    long_usd = ledger.estimate_usd("claude-haiku-5-5", 60_000, 1_000, 50_000, 0)
+    assert long_usd == pytest.approx((60_000 * 0.50 + 1_000 * 2.50 + 50_000 * 0.05) / 1e6)
+    # Sonnet 5.5 快取讀 0.20 / 快取寫 2.50
+    assert ledger.estimate_usd("claude-sonnet-5-5", 0, 0, 1_000_000, 0) == pytest.approx(0.20)
+    assert ledger.estimate_usd("claude-sonnet-5-5", 0, 0, 0, 1_000_000) == pytest.approx(2.50)
+    # 未知模型以最貴價估(寧可高估)
+    assert ledger.estimate_usd("some-other-model", 0, 1_000_000, 0, 0) == pytest.approx(20.0)
+
+
+# ── 帳本 ─────────────────────────────────────────────────────────────────────
+def _book(tmp_path, *, daily=0.5, monthly=10.0, clock=None):
+    clock = clock or Clock(dt.datetime(2026, 10, 30, 12, 0, tzinfo=dt.UTC))
+    return ledger.Ledger(str(tmp_path / "l.sqlite"), daily_budget_usd=daily,
+                         monthly_budget_usd=monthly, now=clock), clock
+
+
+def _spend(book, usd):
+    book.record(endpoint="chat", model="claude-haiku-5-5", input_tokens=1, output_tokens=1,
+                cache_read=0, cache_write=0, usd=usd)
+
+
+def test_budget_warning_and_exhausted_daily(tmp_path):
+    book, _ = _book(tmp_path, daily=1.0)
+    _spend(book, 0.79)
+    assert book.budget_state()["daily"]["state"] == "ok"
+    _spend(book, 0.02)
+    assert book.budget_state()["daily"]["state"] == "warning"
+    book.check_budget()  # warning 仍放行
+    _spend(book, 0.19)
+    assert book.budget_state()["daily"]["state"] == "exhausted"
+    with pytest.raises(ledger.BudgetExhausted) as exc:
+        book.check_budget()
+    assert exc.value.scope == "daily"
+
+
+def test_budget_daily_resets_next_day_monthly_persists(tmp_path):
+    book, clock = _book(tmp_path, daily=0.5, monthly=0.6)
+    _spend(book, 0.5)
+    with pytest.raises(ledger.BudgetExhausted):
+        book.check_budget()
+    clock.when = clock.when + dt.timedelta(days=1)
+    book.check_budget()  # 隔日日預算歸零
+    _spend(book, 0.1)
+    with pytest.raises(ledger.BudgetExhausted) as exc:
+        book.check_budget()
+    assert exc.value.scope == "monthly"  # 月度累計 0.6 用罄,月度優先回報
+
+
+def test_question_limit_per_client_and_rollover(tmp_path):
+    book, clock = _book(tmp_path)
+    a = ledger.client_hash("203.0.113.7", SECRET)
+    b = ledger.client_hash("198.51.100.9", SECRET)
+    assert "203.0.113.7" not in a and len(a) == 24
+    assert [book.take_question(a, 2) for _ in range(3)] == [True, True, False]
+    assert book.take_question(b, 2) is True  # 別的來源不受影響
+    assert book.take_question(a, 0) is True  # 0 = 不限
+    clock.when = clock.when + dt.timedelta(days=1)
+    assert book.take_question(a, 2) is True  # 跨 UTC 日歸零
+    assert book.seconds_until_utc_midnight() == 12 * 3600
+
+
+# ── 錯誤對應 ─────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize(
+    ("exc", "kind"),
+    [
+        (anthropic.AuthenticationError("x", response=_resp(401), body=None), "config"),
+        (anthropic.PermissionDeniedError("x", response=_resp(403), body=None), "config"),
+        (anthropic.NotFoundError("x", response=_resp(404), body=None), "config"),
+        (anthropic.BadRequestError("x", response=_resp(400), body=None), "backend"),
+        (anthropic.InternalServerError("x", response=_resp(500), body=None), "backend"),
+        (anthropic.APIConnectionError(request=httpx2.Request("POST", "https://x")), "backend"),
+        (anthropic.APITimeoutError(request=httpx2.Request("POST", "https://x")), "backend"),
+    ],
+)
+def test_translate_error(exc, kind):
+    err = llm.translate_error(exc)
+    assert isinstance(err, llm.LLMConfigError if kind == "config" else llm.LLMBackendError)
+
+
+def test_translate_rate_limit_keeps_retry_after():
+    exc = anthropic.RateLimitError("x", response=_resp(429, {"retry-after": "7"}), body=None)
+    err = llm.translate_error(exc)
+    assert isinstance(err, llm.LLMBackendError) and err.retry_after == "7"
+
+
+# ── chat() / complete_text() ─────────────────────────────────────────────────
+async def test_chat_sums_usage_and_passes_runner_params(monkeypatch):
+    monkeypatch.delenv("HERMES_MODEL_CHAT", raising=False)
+    client = FakeClient([_msg(stop="tool_use", inp=500, out=40, cw=600),
+                         _msg("3 open work orders.", inp=50, out=30, cr=600)])
+    result = await llm.chat(client, persona="P", extra_lines=["lang"], history=[("user", "q0")],
+                            message="q1", model="claude-haiku-5-5", mcp_url="http://app/mcp",
+                            scoped_token=TOKEN, locale="en", tools_opener=fake_tools)
+    assert result.text == "3 open work orders." and not result.refused
+    u = result.usage
+    assert (u.api_calls, u.input_tokens, u.output_tokens, u.cache_read, u.cache_write) == (
+        2, 550, 70, 600, 600)
+    assert u.usd > 0
+    kw = client.runner_kwargs
+    assert kw["tools"] == ["tool-a", "tool-b"]
+    assert kw["max_iterations"] == 8 and kw["output_config"] == {"effort": "low"}
+    assert kw["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert kw["messages"][-1] == {"role": "user", "content": "q1"}
+    assert "fallbacks" not in kw  # Haiku 無 server-side fallback
+
+
+async def test_chat_deep_model_gets_fallback_and_medium_effort(monkeypatch):
+    monkeypatch.delenv("HERMES_MODEL_CHAT", raising=False)
+    client = FakeClient([_msg("ok", model="claude-sonnet-5-5")])
+    await llm.chat(client, persona="P", extra_lines=[], history=[], message="q",
+                   model="claude-sonnet-5-5", mcp_url="u", scoped_token=TOKEN, locale=None,
+                   tools_opener=fake_tools)
+    kw = client.runner_kwargs
+    assert kw["fallbacks"] == "default" and kw["output_config"] == {"effort": "medium"}
+
+
+async def test_chat_refusal_returns_fixed_sentence():
+    client = FakeClient([_msg(stop="refusal")])
+    result = await llm.chat(client, persona="P", extra_lines=[], history=[], message="q",
+                            model="claude-haiku-5-5", mcp_url="u", scoped_token=TOKEN,
+                            locale="zh-TW", tools_opener=fake_tools)
+    assert result.refused and result.text == llm.REFUSAL_REPLIES["zh-TW"]
+    assert result.usage.api_calls == 1  # 拒答也記帳
+
+
+async def test_chat_tool_loop_limit_is_backend_error_with_usage():
+    client = FakeClient([_msg(stop="tool_use")] * 8)
+    with pytest.raises(llm.LLMBackendError) as exc:
+        await llm.chat(client, persona="P", extra_lines=[], history=[], message="q",
+                       model="claude-haiku-5-5", mcp_url="u", scoped_token=TOKEN, locale=None,
+                       tools_opener=fake_tools)
+    assert exc.value.usage.api_calls == 8
+
+
+async def test_chat_api_error_translated_and_usage_kept():
+    rate = anthropic.RateLimitError("x", response=_resp(429, {"retry-after": "3"}), body=None)
+    client = FakeClient([_msg(stop="tool_use")], exc=rate)
+    with pytest.raises(llm.LLMBackendError) as exc:
+        await llm.chat(client, persona="P", extra_lines=[], history=[], message="q",
+                       model="claude-haiku-5-5", mcp_url="u", scoped_token=TOKEN, locale=None,
+                       tools_opener=fake_tools)
+    assert exc.value.retry_after == "3" and exc.value.usage.api_calls == 1
+
+
+async def test_complete_text_and_refusal():
+    client = FakeClient(text_message=_msg("Belt replaced; line back up."))
+    result = await llm.complete_text(client, persona="MRQ", prompt="body", model="claude-haiku-5-5")
+    assert result.text == "Belt replaced; line back up."
+    assert client.create_kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert client.create_kwargs["output_config"] == {"effort": "medium"}
+    with pytest.raises(llm.LLMBackendError):
+        await llm.complete_text(FakeClient(text_message=_msg(stop="refusal")), persona="MRQ",
+                                prompt="body", model="claude-haiku-5-5")
+
+
+# ── 端點(HERMES_BACKEND=anthropic)───────────────────────────────────────────
+@pytest.fixture
+def anth(monkeypatch, tmp_path):
+    """anthropic 後端 + 暫存帳本;回 (TestClient, setter) —— setter 指定假客戶端。"""
+    monkeypatch.setenv("HERMES_BACKEND", "anthropic")
+    monkeypatch.setenv("HERMES_GATEWAY_SECRET", SECRET)
+    monkeypatch.setenv("HERMES_LEDGER_PATH", str(tmp_path / "ledger.sqlite"))
+    monkeypatch.setenv("HERMES_DAILY_BUDGET_USD", "0.5")
+    monkeypatch.setenv("HERMES_MONTHLY_BUDGET_USD", "10")
+    monkeypatch.setenv("HERMES_DAILY_QUESTIONS_PER_CLIENT", "2")
+    monkeypatch.setattr(gw, "_ledger_instance", None)
+    monkeypatch.setattr(gw, "_client_instance", None)
+    monkeypatch.setattr(gw, "_semaphore", None)
+    mod = gw._sibling("llm_anthropic")
+    monkeypatch.setattr(mod, "open_mcp_tools", fake_tools)
+
+    def use(fake):
+        monkeypatch.setattr(gw, "_client_instance", fake)
+
+    return TestClient(gw.app), use
+
+
+def _chat(client, **extra):
+    body = {"message": "how many open orders?", "scoped_token": TOKEN, "client_id": "203.0.113.7"}
+    body.update(extra)
+    return client.post("/chat", headers={"X-Hermes-Secret": SECRET}, json=body)
+
+
+def test_health_reports_backend_and_budgets(anth):
+    client, _ = anth
+    body = client.get("/health").json()
+    assert body["backend"] == "anthropic"
+    assert body["budget"]["daily"] == {"spent_usd": 0, "limit_usd": 0.5, "state": "ok"}
+    assert body["budget"]["monthly"]["limit_usd"] == 10.0
+
+
+def test_chat_success_records_spend(anth, caplog):
+    client, use = anth
+    use(FakeClient([_msg("Two open orders.", inp=1000, out=200)]))
+    with caplog.at_level(logging.INFO):
+        resp = _chat(client)
+    assert resp.status_code == 200 and resp.json() == {"reply": "Two open orders."}
+    spent = client.get("/health").json()["budget"]["daily"]["spent_usd"]
+    assert spent == pytest.approx((1000 * 0.10 + 200 * 0.50) / 1e6)
+    assert TOKEN not in caplog.text and API_KEY not in caplog.text
+    assert "how many open orders" not in caplog.text  # 不 log 提問內文
+
+
+def test_chat_question_limit_429_per_client(anth):
+    client, use = anth
+    use(FakeClient([_msg("ok")]))
+    assert _chat(client).status_code == 200
+    use(FakeClient([_msg("ok")]))
+    assert _chat(client).status_code == 200
+    resp = _chat(client)
+    assert resp.status_code == 429 and int(resp.headers["retry-after"]) > 0
+    use(FakeClient([_msg("ok")]))
+    assert _chat(client, client_id="198.51.100.9").status_code == 200
+
+
+def test_chat_budget_exhausted_503(anth):
+    client, use = anth
+    gw._ledger().record(endpoint="chat", model="claude-haiku-5-5", input_tokens=0,
+                        output_tokens=0, cache_read=0, cache_write=0, usd=0.5)
+    use(FakeClient([_msg("never")]))
+    resp = _chat(client)
+    assert resp.status_code == 503 and resp.json() == {"detail": "daily budget exhausted"}
+    assert client.get("/health").json()["budget"]["daily"]["state"] == "exhausted"
+
+
+def test_chat_missing_key_503(anth, monkeypatch):
+    client, _ = anth
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    resp = _chat(client)
+    assert resp.status_code == 503 and "not configured" in resp.json()["detail"]
+
+
+def test_chat_backend_error_502_with_retry_after(anth):
+    client, use = anth
+    rate = anthropic.RateLimitError("x", response=_resp(429, {"retry-after": "9"}), body=None)
+    use(FakeClient([], exc=rate))
+    resp = _chat(client)
+    assert resp.status_code == 502 and resp.headers["retry-after"] == "9"
+
+
+def test_chat_wrong_secret_401_before_any_spend(anth):
+    client, use = anth
+    fake = FakeClient([_msg("x")])
+    use(fake)
+    resp = client.post("/chat", headers={"X-Hermes-Secret": "nope"},
+                       json={"message": "q", "scoped_token": TOKEN})
+    assert resp.status_code == 401 and fake.runner_kwargs is None
+
+
+def test_mrq_description_anthropic(anth):
+    client, use = anth
+    fake = FakeClient(text_message=_msg("Belt replaced; output verified."))
+    use(fake)
+    resp = client.post("/mrq-description", headers={"X-Hermes-Secret": SECRET},
+                       json={"work_orders": [{"eid": "EID-97001", "name": "Aligner-01",
+                                              "notes": [{"body": "belt worn"}]}],
+                             "jira_locale": "English"})
+    assert resp.status_code == 200
+    assert resp.json() == {"description": "Belt replaced; output verified."}
+    sys_blocks = fake.create_kwargs["system"]
+    assert sys_blocks[0]["text"] == gw.MRQ_DESCRIPTION_PERSONA  # persona 在 system、不在 prompt
+    assert gw.MRQ_DESCRIPTION_PERSONA not in fake.create_kwargs["messages"][0]["content"]

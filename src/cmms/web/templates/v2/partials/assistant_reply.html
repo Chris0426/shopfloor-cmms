@@ -9,6 +9,8 @@
 <div class="chat-msg chat-msg--sys">{{ t("assistant.disabled") }}</div>
 {% elif error == "limit" %}
 <div class="chat-msg chat-msg--sys chat-msg--err">{{ t("assistant.limit") }}</div>
+{% elif error in ("quota", "budget") %}
+<div class="chat-msg chat-msg--sys chat-msg--err">{{ t("assistant." ~ error) }}</div>
 {% elif error %}
 <div class="chat-error">
   <div class="chat-msg chat-msg--sys chat-msg--err">{{ t("assistant.error") }}</div>

@@ -24,19 +24,29 @@
 - codex 執行約束:`sandbox_mode=read-only`、`approval_policy=never`(headless 不升權)、
   每請求臨時空工作目錄、逾時強殺、asyncio semaphore 併發上限。
 
-## 401 / 503 / 502
+## 後端切換(`HERMES_BACKEND`)
+- `codex`(預設):每請求跑 `codex exec`(見下)。
+- `anthropic`:Anthropic Claude API(`llm_anthropic.py`;gateway 自己當 MCP client)+ 成本帳本 /
+  預算閘 / 每來源每日問題上限(`ledger.py`)。公開示範站用這條。
+
+## 401 / 429 / 503 / 502
 - `X-Hermes-Secret` != `HERMES_GATEWAY_SECRET`(常數時間比較)→ 401;secret 未設 → 503(fail-closed)。
-- codex 失敗 / 逾時 → 502 帶簡短原因(不假裝有答案)。
+- anthropic 後端:金鑰未設 / 被拒 → 503;當日或當月預算用罄 → 503(fail-closed);
+  同一來源當日問題數達上限 → 429(帶 Retry-After = 到 UTC 午夜的秒數)。
+- 後端失敗 / 逾時 → 502 帶簡短原因(不假裝有答案)。
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.util
 import logging
 import os
+import pathlib
 import secrets
 import shutil
+import sys
 import tempfile
 import time
 
@@ -223,6 +233,10 @@ class ChatRequest(BaseModel):
     locale: str | None = None
     # 需求 ③(ADR-020/023):寫進 Jira MRQ 的內容(summary/description)用此語言,與 UI 回覆語言分離。
     jira_locale: str | None = None
+    # 每來源每日問題上限的來源鍵:web = 使用者 IP;其他通道 = cmms 給的穩定鍵。只存雜湊(ledger)。
+    client_id: str | None = None
+    # "deep" → 走較強的模型(anthropic 後端;cmms 日後可加按鈕)。
+    tier: str | None = None
 
 
 class WoNote(BaseModel):
@@ -285,7 +299,79 @@ def _chat_model() -> str | None:
 
 
 def _timeout_seconds() -> float:
-    return float(os.environ.get("HERMES_CODEX_TIMEOUT", _DEFAULT_TIMEOUT_SECONDS))
+    """整體逾時;`HERMES_LLM_TIMEOUT` 為新名,舊名 `HERMES_CODEX_TIMEOUT` 仍相容。"""
+    raw = os.environ.get("HERMES_LLM_TIMEOUT") or os.environ.get("HERMES_CODEX_TIMEOUT")
+    return float(raw or _DEFAULT_TIMEOUT_SECONDS)
+
+
+def _backend() -> str:
+    """`HERMES_BACKEND`:`codex`(預設)/ `anthropic`。"""
+    value = (os.environ.get("HERMES_BACKEND") or "codex").strip().lower()
+    return "anthropic" if value == "anthropic" else "codex"
+
+
+# ── anthropic 後端:模組惰性載入(codex 部署不需安裝 anthropic 套件)─────────────
+_DEFAULT_LEDGER_PATH = "/data/ledger.sqlite"
+_DEFAULT_DAILY_BUDGET_USD = 0.5
+_DEFAULT_MONTHLY_BUDGET_USD = 10.0
+_DEFAULT_QUESTIONS_PER_CLIENT = 10
+
+_sibling_cache: dict[str, object] = {}
+
+
+def _sibling(name: str):
+    """同目錄模組:套件載入走 `app.<name>`;測試以檔案路徑載入時改以路徑載入。"""
+    if name in _sibling_cache:
+        return _sibling_cache[name]
+    if __package__:
+        module = importlib.import_module(f"{__package__}.{name}")
+    else:
+        key = f"hermes_{name}"
+        module = sys.modules.get(key)
+        if module is None:
+            spec = importlib.util.spec_from_file_location(
+                key, pathlib.Path(__file__).with_name(f"{name}.py")
+            )
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[key] = module
+            spec.loader.exec_module(module)
+    _sibling_cache[name] = module
+    return module
+
+
+_ledger_instance = None
+
+
+def _ledger():
+    """帳本單例(路徑 / 預算於首次使用時讀 env)。"""
+    global _ledger_instance
+    if _ledger_instance is None:
+        mod = _sibling("ledger")
+        _ledger_instance = mod.Ledger(
+            os.environ.get("HERMES_LEDGER_PATH", _DEFAULT_LEDGER_PATH),
+            daily_budget_usd=float(
+                os.environ.get("HERMES_DAILY_BUDGET_USD", _DEFAULT_DAILY_BUDGET_USD)
+            ),
+            monthly_budget_usd=float(
+                os.environ.get("HERMES_MONTHLY_BUDGET_USD", _DEFAULT_MONTHLY_BUDGET_USD)
+            ),
+        )
+    return _ledger_instance
+
+
+def _questions_per_client() -> int:
+    return int(os.environ.get("HERMES_DAILY_QUESTIONS_PER_CLIENT", _DEFAULT_QUESTIONS_PER_CLIENT))
+
+
+_client_instance = None
+
+
+def _anthropic_client():
+    """惰性建立 AsyncAnthropic(金鑰未設 → LLMConfigError,由呼叫端轉 503)。"""
+    global _client_instance
+    if _client_instance is None:
+        _client_instance = _sibling("llm_anthropic").make_client()
+    return _client_instance
 
 
 _semaphore: asyncio.Semaphore | None = None
@@ -301,6 +387,19 @@ def _get_semaphore() -> asyncio.Semaphore:
 
 
 # ── prompt / 命令組裝（純函式,易測）──────────────────────────────────────────
+def persona_extras(locale: str | None, jira_locale: str | None) -> list[str]:
+    """每請求不同的 persona 補充(回覆語言 / Jira 輸出語言)。"""
+    lines: list[str] = []
+    if locale:
+        lines.append(f"The user's preferred reply language is: {locale}.")
+    if jira_locale:
+        lines.append(
+            "When you generate content destined for Jira MRQ (the summary and "
+            f"description of forward_work_orders_to_mrq), write it in: {jira_locale}."
+        )
+    return lines
+
+
 def build_prompt(
     message: str,
     history: list[HistoryTurn] | None = None,
@@ -311,14 +410,7 @@ def build_prompt(
 
     codex exec 把整段當一次 user turn;persona 以指令形式前置,歷史以 User/Assistant 逐行還原。
     """
-    parts: list[str] = [SYSTEM_PERSONA]
-    if locale:
-        parts.append(f"The user's preferred reply language is: {locale}.")
-    if jira_locale:
-        parts.append(
-            "When you generate content destined for Jira MRQ (the summary and "
-            f"description of forward_work_orders_to_mrq), write it in: {jira_locale}."
-        )
+    parts: list[str] = [SYSTEM_PERSONA, *persona_extras(locale, jira_locale)]
     if history:
         rendered = []
         for turn in history:
@@ -336,8 +428,13 @@ def build_mrq_description_prompt(req: MrqDescriptionRequest) -> str:
     每工單以 `[<at> · <author>] <body>` 逐筆渲染;name/brief 供敘事上下文(但 persona
     要求單工單不重述設備名)。純文字任務、無歷史、無工具。
     """
+    return "\n\n".join([MRQ_DESCRIPTION_PERSONA, build_mrq_description_body(req)])
+
+
+def build_mrq_description_body(req: MrqDescriptionRequest) -> str:
+    """MRQ description 的任務本文(不含 persona;anthropic 後端把 persona 放 system)。"""
     jira_locale = req.jira_locale or "English"
-    parts: list[str] = [MRQ_DESCRIPTION_PERSONA]
+    parts: list[str] = []
     parts.append(f"Write the description in this language: {jira_locale}.")
     if req.truncated:
         parts.append(
@@ -592,8 +689,158 @@ app = FastAPI(title="Hermes gateway", docs_url=None, redoc_url=None, openapi_url
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict[str, object]:
+    """存活 + 後端;anthropic 後端另回當日 / 當月預算狀態(ok / warning / exhausted)。"""
+    out: dict[str, object] = {"status": "ok", "backend": _backend()}
+    if out["backend"] == "anthropic":
+        try:
+            out["budget"] = _ledger().budget_state()
+        except Exception as exc:  # 帳本打不開:誠實回報,不假裝預算正常
+            _logger.warning("ledger unavailable: %s", type(exc).__name__)
+            out["budget"] = "unavailable"
+    return out
+
+
+def _auth_error(x_hermes_secret: str | None) -> JSONResponse | None:
+    """共用閘門:secret 未設 → 503(fail-closed);不符 → 401;通過 → None。"""
+    expected = _expected_secret()
+    if expected is None:
+        return JSONResponse({"detail": "gateway secret not configured"}, status_code=503)
+    if x_hermes_secret is None or not secrets.compare_digest(x_hermes_secret, expected):
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return None
+
+
+def _budget_gate():
+    """anthropic 後端呼叫前的預算閘;回 (帳本, None) 或 (None, 503 回應)。"""
+    led = _sibling("ledger")
+    try:
+        book = _ledger()
+        book.check_budget()
+    except led.BudgetExhausted as exc:
+        _logger.warning("budget exhausted scope=%s", exc.scope)
+        return None, JSONResponse({"detail": str(exc)}, status_code=503)
+    except Exception as exc:  # 帳本壞掉 → fail-closed(記不了帳就不花錢)
+        _logger.warning("ledger unavailable: %s", type(exc).__name__)
+        return None, JSONResponse({"detail": "ledger unavailable"}, status_code=503)
+    return book, None
+
+
+def _record(book, endpoint: str, usage, outcome: str) -> None:
+    if usage is None or not usage.api_calls:
+        return
+    book.record(
+        endpoint=endpoint, model=usage.model, input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens, cache_read=usage.cache_read,
+        cache_write=usage.cache_write, usd=usage.usd, outcome=outcome,
+    )
+
+
+def _backend_error(exc: Exception) -> JSONResponse:
+    llm = _sibling("llm_anthropic")
+    if isinstance(exc, llm.LLMConfigError):
+        return JSONResponse({"detail": f"agent backend not configured: {exc}"}, status_code=503)
+    headers = {"Retry-After": exc.retry_after} if getattr(exc, "retry_after", None) else None
+    return JSONResponse({"detail": f"agent backend error: {exc}"}, status_code=502, headers=headers)
+
+
+async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
+    llm = _sibling("llm_anthropic")
+    led = _sibling("ledger")
+    book, refusal = _budget_gate()
+    if refusal is not None:
+        return refusal
+    client_key = led.client_hash(req.client_id or "unknown", _expected_secret() or "")
+    if not book.take_question(client_key, _questions_per_client()):
+        _logger.info("chat rejected reason=daily-question-limit")
+        return JSONResponse(
+            {"detail": "daily question limit reached"},
+            status_code=429,
+            headers={"Retry-After": str(book.seconds_until_utc_midnight())},
+        )
+    try:
+        client = _anthropic_client()
+    except llm.LLMConfigError as exc:
+        return _backend_error(exc)
+    model = llm.pick_chat_model(req.message, req.tier)
+    try:
+        async with _get_semaphore():
+            result = await asyncio.wait_for(
+                llm.chat(
+                    client,
+                    persona=SYSTEM_PERSONA,
+                    extra_lines=persona_extras(req.locale, req.jira_locale),
+                    history=[(t.role, t.content) for t in req.history],
+                    message=req.message,
+                    model=model,
+                    mcp_url=_mcp_url(),
+                    scoped_token=req.scoped_token,
+                    locale=req.locale,
+                ),
+                timeout=_timeout_seconds(),
+            )
+    except TimeoutError:
+        _logger.info("chat failed total=%.1fs error=timeout", time.perf_counter() - start)
+        return JSONResponse({"detail": "agent backend error: timeout"}, status_code=502)
+    except (llm.LLMConfigError, llm.LLMBackendError) as exc:
+        _record(book, "chat", getattr(exc, "usage", None), "error")
+        _logger.info(
+            "chat failed total=%.1fs model=%s error=%s",
+            time.perf_counter() - start, model, type(exc).__name__,
+        )
+        return _backend_error(exc)
+    except Exception as exc:  # MCP 連線 / 協定錯誤(常以 ExceptionGroup 形式冒出)
+        _logger.info(
+            "chat failed total=%.1fs model=%s error=%s",
+            time.perf_counter() - start, model, type(exc).__name__,
+        )
+        return JSONResponse(
+            {"detail": "agent backend error: tool server unavailable"}, status_code=502
+        )
+    u = result.usage
+    _record(book, "chat", u, "refusal" if result.refused else "ok")
+    _logger.info(
+        "chat done total=%.1fs model=%s api_calls=%d in=%d out=%d cache_read=%d "
+        "cache_write=%d usd=%.5f history_turns=%d refused=%s",
+        time.perf_counter() - start, u.model, u.api_calls, u.input_tokens, u.output_tokens,
+        u.cache_read, u.cache_write, u.usd, len(req.history), result.refused,
+    )
+    return JSONResponse({"reply": result.text})
+
+
+async def _mrq_description_anthropic(req: MrqDescriptionRequest, start: float) -> JSONResponse:
+    llm = _sibling("llm_anthropic")
+    book, refusal = _budget_gate()
+    if refusal is not None:
+        return refusal
+    try:
+        client = _anthropic_client()
+        result = await asyncio.wait_for(
+            llm.complete_text(
+                client,
+                persona=MRQ_DESCRIPTION_PERSONA,
+                prompt=build_mrq_description_body(req),
+                model=llm.model_text(),
+            ),
+            timeout=_timeout_seconds(),
+        )
+    except TimeoutError:
+        return JSONResponse({"detail": "agent backend error: timeout"}, status_code=502)
+    except (llm.LLMConfigError, llm.LLMBackendError) as exc:
+        _record(book, "mrq-description", getattr(exc, "usage", None), "error")
+        _logger.info(
+            "mrq-description failed total=%.1fs error=%s",
+            time.perf_counter() - start, type(exc).__name__,
+        )
+        return _backend_error(exc)
+    u = result.usage
+    _record(book, "mrq-description", u, "ok")
+    _logger.info(
+        "mrq-description done total=%.1fs model=%s in=%d out=%d usd=%.5f work_orders=%d",
+        time.perf_counter() - start, u.model, u.input_tokens, u.output_tokens, u.usd,
+        len(req.work_orders),
+    )
+    return JSONResponse({"description": result.text})
 
 
 @app.post("/chat")
@@ -602,12 +849,11 @@ async def chat(
     x_hermes_secret: str | None = Header(default=None),
 ) -> JSONResponse:
     start = time.perf_counter()
-    expected = _expected_secret()
-    if expected is None:
-        # fail-closed:secret 未設 → 一律拒(內部服務不裸奔)
-        return JSONResponse({"detail": "gateway secret not configured"}, status_code=503)
-    if x_hermes_secret is None or not secrets.compare_digest(x_hermes_secret, expected):
-        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    denied = _auth_error(x_hermes_secret)  # fail-closed:secret 未設 → 503;不符 → 401
+    if denied is not None:
+        return denied
+    if _backend() == "anthropic":
+        return await _chat_anthropic(req, start)
 
     prompt = build_prompt(req.message, req.history, req.locale, req.jira_locale)
     try:
@@ -649,11 +895,11 @@ async def mrq_description(
     codex 失敗 / 逾時 → 502。成功 → {"description": "..."}。
     """
     start = time.perf_counter()
-    expected = _expected_secret()
-    if expected is None:
-        return JSONResponse({"detail": "gateway secret not configured"}, status_code=503)
-    if x_hermes_secret is None or not secrets.compare_digest(x_hermes_secret, expected):
-        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    denied = _auth_error(x_hermes_secret)
+    if denied is not None:
+        return denied
+    if _backend() == "anthropic":
+        return await _mrq_description_anthropic(req, start)
 
     prompt = build_mrq_description_prompt(req)
     try:

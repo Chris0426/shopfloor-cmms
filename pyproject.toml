@@ -33,6 +33,7 @@ dev = [
     "httpx>=0.28",
     "testcontainers[postgres]>=4.8",   # integration test 用真的 PG(ADR-012)
     "psycopg[binary]>=3.2",            # alembic 同步 driver / 測試用
+    "anthropic[mcp]>=2.3.0",
 ]
 
 [project.scripts]

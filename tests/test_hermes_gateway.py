@@ -54,7 +54,7 @@ def client(monkeypatch):
 def test_health_ok(client):
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    assert resp.json() == {"status": "ok", "backend": "codex"}  # 預設後端,無預算欄
 
 
 # ── secret 閘門 ──────────────────────────────────────────────────────────────

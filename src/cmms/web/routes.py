@@ -3082,6 +3082,8 @@ async def assistant_reply(
         # 需求 ③(ADR-020/023):Hermes 生成寫進 Jira MRQ 的內容(summary/description)用此語言,
         # 與 UI 回覆語言(locale)分離、各自持久化(user_account.jira_output_locale)。
         "jira_locale": user.jira_output_locale,
+        # gateway 每來源每日問題上限的來源鍵(示範帳號共用 → 以 IP 為主);gateway 只存雜湊
+        "client_id": request.client.host if request.client else None,
     }
     try:
         async with httpx.AsyncClient(timeout=_ASSISTANT_TIMEOUT_SECONDS) as client:
@@ -3090,6 +3092,9 @@ async def assistant_reply(
                 headers={"X-Hermes-Secret": settings.hermes_gateway_secret},
                 json=payload,
             )
+        limited = _gateway_limit_kind(resp)
+        if limited:  # 限流 / 預算熔斷:誠實告知,今天內重試無效 → 不給重試鈕
+            return _bubble(error=limited)
         resp.raise_for_status()
         reply = str((resp.json() or {}).get("reply") or "").strip()
     except (httpx.HTTPError, ValueError, TypeError) as exc:
@@ -3108,6 +3113,17 @@ async def assistant_reply(
         return _bubble(error="unavailable", retry_id=message_id)
 
     return _bubble(reply_html=render_reply(reply))
+
+
+def _gateway_limit_kind(resp: httpx.Response) -> str | None:
+    """gateway 回應 → "quota"(429 當日問題數上限)/ "budget"(503 預算用罄)/ None。"""
+    if resp.status_code == 429:
+        return "quota"
+    if resp.status_code == 503:
+        with contextlib.suppress(ValueError, AttributeError):
+            if "budget" in str((resp.json() or {}).get("detail", "")):
+                return "budget"
+    return None
 
 
 @router.get("/set-locale")

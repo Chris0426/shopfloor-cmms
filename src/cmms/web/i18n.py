@@ -92,6 +92,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.pm.step_del": "Delete step",
         "assistant.disabled": "Assistant isn't enabled yet.",
         "assistant.error": "The assistant is unavailable right now — please try again later.",
+        # gateway 限流(429:同一來源當日問題數達上限)/ 預算熔斷(503)—— 今天內重試無效,不給重試鈕
+        "assistant.quota": "You've reached today's question limit. It resets at midnight UTC.",
+        "assistant.budget": (
+            "The assistant has reached its usage budget for now — please try again later."
+        ),
         "assistant.disclaimer": (
             "Any changes the assistant makes become proposals for an admin to review."
         ),
@@ -1144,6 +1149,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.pm.step_del": "刪除此步驟",
         "assistant.disabled": "助理尚未啟用。",
         "assistant.error": "助理暫時無法回應,稍後再試。",
+        "assistant.quota": "今天的提問次數已用完,UTC 午夜後重置。",
+        "assistant.budget": "助理目前的使用額度已用完,請稍後再試。",
         "assistant.disclaimer": "助理的寫入操作一律成為提案,待管理員審核生效。",
         "assistant.sessions": "對話",
         "assistant.empty": "輸入問題以開始這段對話。",
@@ -2082,6 +2089,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.pm.step_del": "Xóa bước",
         "assistant.disabled": "Trợ lý chưa được kích hoạt.",
         "assistant.error": "Trợ lý tạm thời không phản hồi — vui lòng thử lại sau.",
+        "assistant.quota": "Bạn đã dùng hết số câu hỏi hôm nay. Hạn mức đặt lại lúc nửa đêm UTC.",
+        "assistant.budget": "Trợ lý tạm thời đã hết hạn mức sử dụng — vui lòng thử lại sau.",
         "assistant.disclaimer": (
             "Mọi thay đổi của trợ lý đều thành đề xuất chờ quản trị viên duyệt."
         ),
