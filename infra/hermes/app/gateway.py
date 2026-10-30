@@ -249,6 +249,8 @@ class ChatRequest(BaseModel):
     target: Literal["cmms", "board"] = "cmms"
     # board 的回合識別;淨化後以 X-Board-Turn header 帶給 board MCP(cmms 不送)。
     turn_id: str | None = None
+    # 回覆版面(board 用,cmms 忽略):以尾端 system 行「Reply layout: <值>」告知模型;其他值 → 422。
+    layout: Literal["narrow", "wide"] | None = None
 
 
 class WoNote(BaseModel):
@@ -471,8 +473,10 @@ def _get_semaphore() -> asyncio.Semaphore:
 
 
 # ── prompt / 命令組裝（純函式,易測）──────────────────────────────────────────
-def persona_extras(locale: str | None, jira_locale: str | None) -> list[str]:
-    """每請求不同的 persona 補充(回覆語言 / Jira 輸出語言)。"""
+def persona_extras(
+    locale: str | None, jira_locale: str | None, *, layout: str | None = None
+) -> list[str]:
+    """每請求不同的 persona 補充(回覆語言 / Jira 輸出語言 / 回覆版面)。"""
     lines: list[str] = []
     if locale:
         lines.append(f"The user's preferred reply language is: {locale}.")
@@ -481,6 +485,8 @@ def persona_extras(locale: str | None, jira_locale: str | None) -> list[str]:
             "When you generate content destined for Jira MRQ (the summary and "
             f"description of forward_work_orders_to_mrq), write it in: {jira_locale}."
         )
+    if layout:
+        lines.append(f"Reply layout: {layout}")  # 放最後;persona 本體(快取前綴)不動
     return lines
 
 
@@ -853,7 +859,8 @@ async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
             return JSONResponse(
                 {"detail": f"persona not available: {target}"}, status_code=503
             )
-        extras = persona_extras(req.locale, None)  # board 無 Jira:不給 jira_locale 提示
+        # board 無 Jira:不給 jira_locale 提示;layout 只有 board 傳
+        extras = persona_extras(req.locale, None, layout=req.layout)
         extra_headers = board_turn_headers(req.turn_id)
     book, refusal = _budget_gate(target)
     if refusal is not None:

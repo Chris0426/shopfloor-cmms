@@ -530,6 +530,44 @@ def test_board_uses_board_url_and_packaged_persona(anth, tools, monkeypatch):
     assert "Jira" not in system[1]["text"]  # board 無 Jira 提示
 
 
+def _board_layout_setup(anth, monkeypatch):
+    client, use = anth
+    monkeypatch.setenv("CMMS_MCP_URL", CMMS_URL)
+    monkeypatch.setenv("BOARD_MCP_URL", BOARD_URL)
+    fake = FakeClient([_msg("ok")])
+    use(fake)
+    return client, fake
+
+
+def test_board_layout_wide_is_last_system_block_persona_still_cached(anth, tools, monkeypatch):
+    client, fake = _board_layout_setup(anth, monkeypatch)
+    assert _chat(client, target="board", layout="wide").status_code == 200
+    system = fake.runner_kwargs["system"]
+    assert system[-1]["text"] == "Reply layout: wide"
+    assert "cache_control" in system[0]
+
+
+def test_board_without_layout_has_no_layout_block(anth, tools, monkeypatch):
+    client, fake = _board_layout_setup(anth, monkeypatch)
+    assert _chat(client, target="board", locale="en").status_code == 200
+    assert not any("Reply layout" in b["text"] for b in fake.runner_kwargs["system"])
+
+
+def test_cmms_ignores_layout(anth, tools, monkeypatch):
+    client, fake = _board_layout_setup(anth, monkeypatch)
+    assert _chat(client, layout="narrow").status_code == 200
+    assert not any("Reply layout" in b["text"] for b in fake.runner_kwargs["system"])
+
+
+def test_invalid_layout_422(anth):
+    client, _ = anth
+    assert _chat(client, target="board", layout="huge").status_code == 422
+
+
+def test_persona_extras_layout_only():
+    assert gw.persona_extras(None, None, layout="narrow") == ["Reply layout: narrow"]
+
+
 def test_chat_request_has_no_url_field():
     assert not [f for f in gw.ChatRequest.model_fields if "url" in f.lower()]
 

@@ -30,6 +30,7 @@ Auth: header `X-Hermes-Secret` on `/chat` and `/mrq-description`, compared in co
 | `tier` | string | no | null | `"deep"` selects the deep model. Messages containing deep-analysis markers also select it. |
 | `target` | `"cmms"` \| `"board"` | no | `"cmms"` | Product to serve. Any other value -> 422. |
 | `turn_id` | string | no | null | `board` only. Sanitised and forwarded to the board MCP as header `X-Board-Turn`: trimmed, <= 128 chars, ASCII printable (0x20-0x7E) only; otherwise the header is silently omitted. cmms never sends it. |
+| `layout` | `"narrow"` \| `"wide"` | no | null | `board` only; cmms ignores it. Any other value -> 422. Rendered as a trailing system line `Reply layout: <value>` after the cached persona. |
 
 The request never carries an MCP URL. URLs come from server env only
 (`CMMS_MCP_URL`, `BOARD_MCP_URL`); a caller can choose a `target`, nothing more.
@@ -147,7 +148,9 @@ estimated at the most expensive listed price.
   unreachable from the container.
 - Recommended: the Oracle host initiates the tunnel to the Board host with
   `-L 172.17.0.1:18050:127.0.0.1:8050` (client-side bind, needs no sshd `GatewayPorts`) and
-  `-R 127.0.0.1:8797:127.0.0.1:8080`.
+  `-R 127.0.0.1:8797:127.0.0.1:8797`. `8797` on the Oracle side is the gateway's host-loopback
+  publish port (compose `127.0.0.1:8797:8080`, container port 8080); `8797` on the Board host is
+  what the Board client dials; `18050` is the Board MCP as seen from the Oracle host (docker0 bind).
 - hermes gets `extra_hosts: ["host.docker.internal:host-gateway"]` and
   `BOARD_MCP_URL=http://host.docker.internal:18050/mcp`
   (commented lines are in `docker-compose.public.yml`).

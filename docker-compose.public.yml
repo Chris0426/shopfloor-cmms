@@ -63,6 +63,9 @@ services:
     # board MCP 經 host 端 tunnel(綁在 docker0 位址)進來;容器要靠此別名才連得到 host(見 CONTRACT §8)。
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # 只綁 host loopback,給 Oracle 發起的 SSH 隧道 `-R` 端用(見 CONTRACT §8);不對公網開。
+    ports:
+      - "127.0.0.1:8797:8080"
     volumes:
       - hermes_data:/data
     depends_on:

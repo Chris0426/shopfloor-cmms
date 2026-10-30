@@ -151,6 +151,7 @@ flyctl ssh console -a shopfloor-cmms
 # 在 repo 根目錄 .env 放入 ANTHROPIC_API_KEY 與 HERMES_GATEWAY_SECRET(.env 不入 git)
 docker compose up -d --build hermes
 docker compose exec hermes curl -s http://127.0.0.1:8080/health
+curl -s http://127.0.0.1:8797/health   # 或在 host 端(公開 compose 疊加 docker-compose.public.yml 後)
 ```
 
 > scoped token 的發放見 `docs/integrations/agent-pilot.md`(`cmms mcp-token`)。dock 正式
