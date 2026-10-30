@@ -258,17 +258,34 @@ def gen_tasks(rng: random.Random) -> list[dict]:
     for i in range(40):
         family = FAMILIES[i % len(FAMILIES)][0]
         kind = PM_TASKS[i % len(PM_TASKS)]
-        tasks.append({"task_no": f"TSK-{i + 1:04d}", "task_desc": f"{family} — {kind}"})
+        tasks.append(
+            {
+                "task_no": f"TSK-{i + 1:04d}",
+                "task_desc": f"{family} — {kind}",
+                # 不寫進 CSV,供 gen_pm_schedules 依機型配對:
+                "_family": family,
+            }
+        )
     return tasks
 
 
 def gen_pm_schedules(rng: random.Random, assets: list[dict], tasks: list[dict]) -> list[dict]:
     """80 PM schedules; a handful are already overdue so the 'due' list is not empty."""
     live = [a for a in assets if not a["_retired"]]
+    # PM 標題取自任務名稱(「機型 — 項目」),所以任務只能從「與資產同機型」的任務裡挑,
+    # 否則會出現「FlexBonder — …」掛在 Sorter 上的錯配。
+    tasks_by_family: dict[str, list[dict]] = {}
+    for t in tasks:
+        tasks_by_family.setdefault(t["_family"], []).append(t)
     rows = []
     for i in range(80):
         asset = live[i % len(live)]
-        task = tasks[i % len(tasks)]
+        family_tasks = tasks_by_family[asset["_family"]]
+        # 同機型的第幾台 + 第幾輪(80 > 57 台在用資產,前 23 台會排到第二筆 PM),
+        # 第二輪自動換下一個項目,(資產, 任務)不重複(pm_schedule 有唯一鍵)。
+        # 不動 rng,其餘欄位與其後各產生器的亂數序列維持原樣。
+        k = (i % len(live)) // len(FAMILIES) + i // len(live)
+        task = family_tasks[k % len(family_tasks)]
         interval, unit = rng.choice(
             [(1, "Months"), (3, "Months"), (6, "Months"), (2, "Weeks"), (30, "Days")]
         )
