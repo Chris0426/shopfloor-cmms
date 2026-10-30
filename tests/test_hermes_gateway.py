@@ -9,6 +9,7 @@ gateway.py 是獨立小服務(不在 src/cmms 套件內),故以檔案路徑 impo
 - codex 逾時 → 502。
 - prompt 組裝含 persona 與 history。
 - scoped_token 進 env、**不進 argv**(token 絕不落 argv/log)。
+- codex 後端只服務 cmms:target=board → 503;/health 帶 mcp_targets。
 """
 
 from __future__ import annotations
@@ -51,10 +52,27 @@ def client(monkeypatch):
 
 
 # ── health ────────────────────────────────────────────────────────────────────
-def test_health_ok(client):
+def test_health_ok(client, monkeypatch):
+    monkeypatch.delenv("CMMS_MCP_URL", raising=False)
+    monkeypatch.delenv("BOARD_MCP_URL", raising=False)
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "backend": "codex"}  # 預設後端,無預算欄
+    assert resp.json() == {  # 預設後端,無預算欄;mcp_targets 兩後端皆有
+        "status": "ok",
+        "backend": "codex",
+        "mcp_targets": {
+            "cmms": {"configured": False, "url": None},
+            "board": {"configured": False, "url": None},
+        },
+    }
+
+
+def test_health_mcp_targets_codex(client, monkeypatch):
+    monkeypatch.setenv("CMMS_MCP_URL", "http://app:8080/mcp")
+    monkeypatch.delenv("BOARD_MCP_URL", raising=False)
+    targets = client.get("/health").json()["mcp_targets"]
+    assert targets["cmms"] == {"configured": True, "url": "http://app:8080/mcp"}
+    assert targets["board"] == {"configured": False, "url": None}
 
 
 # ── secret 閘門 ──────────────────────────────────────────────────────────────
@@ -118,6 +136,44 @@ def test_chat_correct_secret_invokes_codex(client, monkeypatch):
     assert resp.json() == {"reply": "EID-70021 has 3 open work orders."}
     assert seen["scoped_token"] == "tok-abc"
     assert "list work orders for Aligner46" in seen["prompt"]
+
+
+def test_chat_codex_target_board_503_and_codex_not_called(client, monkeypatch):
+    called = False
+
+    async def _spy(*args, **kwargs):
+        nonlocal called
+        called = True
+        return "should not run", 0.0
+
+    monkeypatch.setattr(gateway, "invoke_codex", _spy)
+    monkeypatch.setenv("BOARD_MCP_URL", "http://board:8080/mcp")  # 即使已設定,codex 仍不服務
+    resp = client.post(
+        "/chat",
+        json={"message": "hi", "scoped_token": "tok", "target": "board", "turn_id": "t1"},
+        headers={"X-Hermes-Secret": "test-secret"},
+    )
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "mcp target not supported by the codex backend: board"}
+    assert called is False
+
+
+def test_chat_codex_explicit_cmms_target_uses_cmms_url(client, monkeypatch):
+    seen = {}
+
+    async def _fake(prompt, scoped_token, *, timeout_seconds, mcp_url, codex_bin, model=None):
+        seen["mcp_url"] = mcp_url
+        return "ok", 1.0
+
+    monkeypatch.setattr(gateway, "invoke_codex", _fake)
+    monkeypatch.setenv("CMMS_MCP_URL", "http://app:8080/mcp")
+    monkeypatch.setenv("BOARD_MCP_URL", "http://board:8080/mcp")
+    resp = client.post(
+        "/chat",
+        json={"message": "hi", "scoped_token": "tok", "target": "cmms"},
+        headers={"X-Hermes-Secret": "test-secret"},
+    )
+    assert resp.status_code == 200 and seen["mcp_url"] == "http://app:8080/mcp"
 
 
 # ── ★ 分段計時 log(延遲數據)且不洩 prompt 內文 ─────────────────────────────

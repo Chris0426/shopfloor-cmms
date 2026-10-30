@@ -209,14 +209,20 @@ def translate_error(exc: Exception) -> Exception:
 
 # ── MCP 工具(seam:測試以假實作取代)─────────────────────────────────────────
 @contextlib.asynccontextmanager
-async def open_mcp_tools(mcp_url: str, scoped_token: str) -> AsyncIterator[list[Any]]:
-    """連 cmms `/mcp`(bearer = scoped token)→ 依名稱排序的 tool_runner 工具清單。"""
+async def open_mcp_tools(
+    mcp_url: str, scoped_token: str, extra_headers: dict[str, str] | None = None
+) -> AsyncIterator[list[Any]]:
+    """連 MCP 端點(bearer = scoped token)→ 依名稱排序的 tool_runner 工具清單。
+
+    `extra_headers`:附加的 HTTP header(例:board 的 `X-Board-Turn`);呼叫端負責淨化。
+    ★ Authorization 恆以 scoped token 為準,extra_headers 蓋不掉它。
+    """
     from anthropic.lib.tools.mcp import async_mcp_tool
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
     from mcp.shared._httpx_utils import create_mcp_http_client
 
-    headers = {"Authorization": f"Bearer {scoped_token}"}
+    headers = {**(extra_headers or {}), "Authorization": f"Bearer {scoped_token}"}
     async with (
         create_mcp_http_client(headers=headers) as http_client,
         streamable_http_client(mcp_url, http_client=http_client) as (read, write, _),
@@ -241,13 +247,22 @@ async def chat(
     scoped_token: str,
     locale: str | None,
     tools_opener=None,
+    extra_headers: dict[str, str] | None = None,
 ) -> LLMResult:
-    """一題對話:MCP 工具 + tool_runner;回 (回覆, 累計 usage, 是否拒答)。"""
+    """一題對話:MCP 工具 + tool_runner;回 (回覆, 累計 usage, 是否拒答)。
+
+    `extra_headers` 為空 → opener 只收 (mcp_url, scoped_token),與加入此參數前完全相同。
+    """
     opener = tools_opener or open_mcp_tools
     usage = Usage(model=model)
     last = None
+    opened = (
+        opener(mcp_url, scoped_token, extra_headers=extra_headers)
+        if extra_headers
+        else opener(mcp_url, scoped_token)
+    )
     try:
-        async with opener(mcp_url, scoped_token) as tools:
+        async with opened as tools:
             runner = client.beta.messages.tool_runner(
                 model=model,
                 max_tokens=CHAT_MAX_TOKENS,

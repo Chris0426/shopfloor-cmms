@@ -29,6 +29,13 @@
 - `anthropic`:Anthropic Claude API(`llm_anthropic.py`;gateway 自己當 MCP client)+ 成本帳本 /
   預算閘 / 每來源每日問題上限(`ledger.py`)。公開示範站用這條。
 
+## 多產品(`ChatRequest.target`;僅 anthropic 後端)
+- `cmms`(預設;不帶 target = 既有行為):MCP = `CMMS_MCP_URL`、persona = `SYSTEM_PERSONA`。
+- `board`:MCP = `BOARD_MCP_URL`(無預設;未設 → 503)、persona = `HERMES_PERSONA_BOARD_FILE`
+  或隨附的 `personas/board.md`;`turn_id` 經淨化後以 `X-Board-Turn` header 帶給 board MCP。
+- MCP URL 只取伺服端設定,request 絕不帶 URL。codex 後端只服務 cmms(board → 503)。
+- 月預算全 target 共用;日預算與每來源每日題數逐 target 分桶。
+
 ## 401 / 429 / 503 / 502
 - `X-Hermes-Secret` != `HERMES_GATEWAY_SECRET`(常數時間比較)→ 401;secret 未設 → 503(fail-closed)。
 - anthropic 後端:金鑰未設 / 被拒 → 503;當日或當月預算用罄 → 503(fail-closed);
@@ -49,6 +56,7 @@ import shutil
 import sys
 import tempfile
 import time
+from typing import Literal
 
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
@@ -237,6 +245,10 @@ class ChatRequest(BaseModel):
     client_id: str | None = None
     # "deep" → 走較強的模型(anthropic 後端;cmms 日後可加按鈕)。
     tier: str | None = None
+    # 服務哪個產品:決定 MCP 端點(伺服端對照表,request 不帶 URL)、persona、預算 / 題數分桶。
+    target: Literal["cmms", "board"] = "cmms"
+    # board 的回合識別;淨化後以 X-Board-Turn header 帶給 board MCP(cmms 不送)。
+    turn_id: str | None = None
 
 
 class WoNote(BaseModel):
@@ -280,8 +292,24 @@ def _expected_secret() -> str | None:
     return os.environ.get("HERMES_GATEWAY_SECRET") or None
 
 
-def _mcp_url() -> str:
-    return os.environ.get("CMMS_MCP_URL", _DEFAULT_MCP_URL)
+# target → MCP URL 的環境變數名(伺服端對照表;request 只能選 target,絕不帶 URL)。
+_MCP_URL_ENV = {"cmms": "CMMS_MCP_URL", "board": "BOARD_MCP_URL"}
+
+
+def _mcp_url(target: str = "cmms") -> str | None:
+    """該 target 的 MCP URL。cmms 保留既有預設;board 無預設 → 未設回 None(呼叫端 503)。"""
+    if target == "cmms":
+        return os.environ.get("CMMS_MCP_URL", _DEFAULT_MCP_URL)
+    return os.environ.get(_MCP_URL_ENV[target]) or None
+
+
+def _mcp_targets() -> dict[str, dict[str, object]]:
+    """/health 用:各 target 是否已設定(env 存在且非空)與其 URL;不探測網路。"""
+    out: dict[str, dict[str, object]] = {}
+    for target, env in _MCP_URL_ENV.items():
+        url = os.environ.get(env) or None
+        out[target] = {"configured": url is not None, "url": url}
+    return out
 
 
 def _codex_bin() -> str:
@@ -315,6 +343,7 @@ _DEFAULT_LEDGER_PATH = "/data/ledger.sqlite"
 _DEFAULT_DAILY_BUDGET_USD = 0.5
 _DEFAULT_MONTHLY_BUDGET_USD = 10.0
 _DEFAULT_QUESTIONS_PER_CLIENT = 10
+_DEFAULT_QUESTIONS_PER_CLIENT_BOARD = 3
 
 _sibling_cache: dict[str, object] = {}
 
@@ -355,12 +384,67 @@ def _ledger():
             monthly_budget_usd=float(
                 os.environ.get("HERMES_MONTHLY_BUDGET_USD", _DEFAULT_MONTHLY_BUDGET_USD)
             ),
+            daily_budget_by_target=_daily_budget_overrides(),
         )
     return _ledger_instance
 
 
-def _questions_per_client() -> int:
+def _daily_budget_overrides() -> dict[str, float]:
+    """逐 target 日預算覆寫:`HERMES_DAILY_BUDGET_USD_<TARGET>`(未設 / 空 → 用共通預設)。"""
+    out: dict[str, float] = {}
+    for target in _MCP_URL_ENV:
+        raw = os.environ.get(f"HERMES_DAILY_BUDGET_USD_{target.upper()}")
+        if raw:
+            out[target] = float(raw)
+    return out
+
+
+def _questions_per_client(target: str = "cmms") -> int:
+    """每來源每日題數上限:cmms 用 `HERMES_DAILY_QUESTIONS_PER_CLIENT`(10);board 另計(3)。"""
+    if target == "board":
+        return int(
+            os.environ.get(
+                "HERMES_DAILY_QUESTIONS_PER_CLIENT_BOARD", _DEFAULT_QUESTIONS_PER_CLIENT_BOARD
+            )
+        )
     return int(os.environ.get("HERMES_DAILY_QUESTIONS_PER_CLIENT", _DEFAULT_QUESTIONS_PER_CLIENT))
+
+
+# ── board persona(檔案載入;首次讀取後快取於模組變數)──────────────────────────
+# 預設 = 隨附的 infra/hermes/personas/board.md(相對 gateway.py 所在目錄解析,不依賴 cwd);
+# `HERMES_PERSONA_BOARD_FILE` 可指向替換檔。讀不到 → 呼叫端 503(不以空 persona 上線)。
+_BOARD_PERSONA_DEFAULT_PATH = (
+    pathlib.Path(__file__).resolve().parent.parent / "personas" / "board.md"
+)
+_board_persona_text: str | None = None
+
+
+def _board_persona() -> str:
+    """board persona 全文(只讀一次);不存在 / 讀不到 / 空 → OSError;非 UTF-8 → 解碼錯誤。"""
+    global _board_persona_text
+    if _board_persona_text is None:
+        path = os.environ.get("HERMES_PERSONA_BOARD_FILE") or _BOARD_PERSONA_DEFAULT_PATH
+        text = pathlib.Path(path).read_text(encoding="utf-8").strip()
+        if not text:
+            raise OSError("board persona file is empty")
+        _board_persona_text = text
+    return _board_persona_text
+
+
+# X-Board-Turn 淨化:去頭尾空白、≤128 字元、僅 ASCII 可列印字元;不符 → 不送此 header。
+_TURN_ID_MAX = 128
+
+
+def board_turn_headers(turn_id: str | None) -> dict[str, str] | None:
+    """turn_id → {"X-Board-Turn": ...};空 / 過長 / 含非 ASCII 可列印字元 → None。"""
+    if not isinstance(turn_id, str):
+        return None
+    value = turn_id.strip()
+    if not value or len(value) > _TURN_ID_MAX:
+        return None
+    if not all(0x20 <= ord(ch) <= 0x7E for ch in value):
+        return None
+    return {"X-Board-Turn": value}
 
 
 _client_instance = None
@@ -690,8 +774,12 @@ app = FastAPI(title="Hermes gateway", docs_url=None, redoc_url=None, openapi_url
 
 @app.get("/health")
 async def health() -> dict[str, object]:
-    """存活 + 後端;anthropic 後端另回當日 / 當月預算狀態(ok / warning / exhausted)。"""
+    """存活 + 後端 + 各 MCP target 設定狀態;anthropic 後端另回預算狀態(ok / warning / exhausted)。
+
+    budget = {"monthly": {...}, "daily": {"cmms": {...}, "board": {...}}}(月共用、日逐 target)。
+    """
     out: dict[str, object] = {"status": "ok", "backend": _backend()}
+    out["mcp_targets"] = _mcp_targets()
     if out["backend"] == "anthropic":
         try:
             out["budget"] = _ledger().budget_state()
@@ -711,12 +799,12 @@ def _auth_error(x_hermes_secret: str | None) -> JSONResponse | None:
     return None
 
 
-def _budget_gate():
-    """anthropic 後端呼叫前的預算閘;回 (帳本, None) 或 (None, 503 回應)。"""
+def _budget_gate(target: str = "cmms"):
+    """anthropic 後端呼叫前的預算閘(月共用 + 該 target 的日預算);回 (帳本, None) 或 (None, 503)。"""
     led = _sibling("ledger")
     try:
         book = _ledger()
-        book.check_budget()
+        book.check_budget(target)
     except led.BudgetExhausted as exc:
         _logger.warning("budget exhausted scope=%s", exc.scope)
         return None, JSONResponse({"detail": str(exc)}, status_code=503)
@@ -726,13 +814,13 @@ def _budget_gate():
     return book, None
 
 
-def _record(book, endpoint: str, usage, outcome: str) -> None:
+def _record(book, endpoint: str, usage, outcome: str, target: str = "cmms") -> None:
     if usage is None or not usage.api_calls:
         return
     book.record(
         endpoint=endpoint, model=usage.model, input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens, cache_read=usage.cache_read,
-        cache_write=usage.cache_write, usd=usage.usd, outcome=outcome,
+        cache_write=usage.cache_write, usd=usage.usd, outcome=outcome, target=target,
     )
 
 
@@ -745,13 +833,35 @@ def _backend_error(exc: Exception) -> JSONResponse:
 
 
 async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
+    """閘門順序:(secret 已過)→ target 已設定(503)→ 月 + 該 target 日預算(503)→
+    該 target 每來源題數(429)→ LLM。target 未設定時不計題、不花錢。"""
     llm = _sibling("llm_anthropic")
     led = _sibling("ledger")
-    book, refusal = _budget_gate()
+    target = req.target
+    mcp_url = _mcp_url(target)
+    if mcp_url is None:
+        return JSONResponse({"detail": f"mcp target not configured: {target}"}, status_code=503)
+    if target == "cmms":
+        persona = SYSTEM_PERSONA
+        extras = persona_extras(req.locale, req.jira_locale)
+        extra_headers = None
+    else:
+        try:
+            persona = _board_persona()
+        except (OSError, UnicodeDecodeError) as exc:
+            _logger.warning("board persona unavailable: %s", type(exc).__name__)
+            return JSONResponse(
+                {"detail": f"persona not available: {target}"}, status_code=503
+            )
+        extras = persona_extras(req.locale, None)  # board 無 Jira:不給 jira_locale 提示
+        extra_headers = board_turn_headers(req.turn_id)
+    book, refusal = _budget_gate(target)
     if refusal is not None:
         return refusal
-    client_key = led.client_hash(req.client_id or "unknown", _expected_secret() or "")
-    if not book.take_question(client_key, _questions_per_client()):
+    # 題數分桶鍵 = "<target>:<來源雜湊>" —— 不同 target 的計數永不互撞。
+    source = led.client_hash(req.client_id or "unknown", _expected_secret() or "")
+    client_key = f"{target}:{source}"
+    if not book.take_question(client_key, _questions_per_client(target)):
         _logger.info("chat rejected reason=daily-question-limit")
         return JSONResponse(
             {"detail": "daily question limit reached"},
@@ -768,14 +878,15 @@ async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
             result = await asyncio.wait_for(
                 llm.chat(
                     client,
-                    persona=SYSTEM_PERSONA,
-                    extra_lines=persona_extras(req.locale, req.jira_locale),
+                    persona=persona,
+                    extra_lines=extras,
                     history=[(t.role, t.content) for t in req.history],
                     message=req.message,
                     model=model,
-                    mcp_url=_mcp_url(),
+                    mcp_url=mcp_url,
                     scoped_token=req.scoped_token,
                     locale=req.locale,
+                    extra_headers=extra_headers,
                 ),
                 timeout=_timeout_seconds(),
             )
@@ -783,7 +894,7 @@ async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
         _logger.info("chat failed total=%.1fs error=timeout", time.perf_counter() - start)
         return JSONResponse({"detail": "agent backend error: timeout"}, status_code=502)
     except (llm.LLMConfigError, llm.LLMBackendError) as exc:
-        _record(book, "chat", getattr(exc, "usage", None), "error")
+        _record(book, "chat", getattr(exc, "usage", None), "error", target)
         _logger.info(
             "chat failed total=%.1fs model=%s error=%s",
             time.perf_counter() - start, model, type(exc).__name__,
@@ -798,7 +909,7 @@ async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
             {"detail": "agent backend error: tool server unavailable"}, status_code=502
         )
     u = result.usage
-    _record(book, "chat", u, "refusal" if result.refused else "ok")
+    _record(book, "chat", u, "refusal" if result.refused else "ok", target)
     _logger.info(
         "chat done total=%.1fs model=%s api_calls=%d in=%d out=%d cache_read=%d "
         "cache_write=%d usd=%.5f history_turns=%d refused=%s",
@@ -810,7 +921,7 @@ async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
 
 async def _mrq_description_anthropic(req: MrqDescriptionRequest, start: float) -> JSONResponse:
     llm = _sibling("llm_anthropic")
-    book, refusal = _budget_gate()
+    book, refusal = _budget_gate("cmms")  # /mrq-description 只屬 cmms:查 cmms 日預算、記 cmms 帳
     if refusal is not None:
         return refusal
     try:
@@ -827,14 +938,14 @@ async def _mrq_description_anthropic(req: MrqDescriptionRequest, start: float) -
     except TimeoutError:
         return JSONResponse({"detail": "agent backend error: timeout"}, status_code=502)
     except (llm.LLMConfigError, llm.LLMBackendError) as exc:
-        _record(book, "mrq-description", getattr(exc, "usage", None), "error")
+        _record(book, "mrq-description", getattr(exc, "usage", None), "error", "cmms")
         _logger.info(
             "mrq-description failed total=%.1fs error=%s",
             time.perf_counter() - start, type(exc).__name__,
         )
         return _backend_error(exc)
     u = result.usage
-    _record(book, "mrq-description", u, "ok")
+    _record(book, "mrq-description", u, "ok", "cmms")
     _logger.info(
         "mrq-description done total=%.1fs model=%s in=%d out=%d usd=%.5f work_orders=%d",
         time.perf_counter() - start, u.model, u.input_tokens, u.output_tokens, u.usd,
@@ -854,6 +965,11 @@ async def chat(
         return denied
     if _backend() == "anthropic":
         return await _chat_anthropic(req, start)
+    if req.target != "cmms":  # codex 後端只服務 cmms(內部不動)
+        return JSONResponse(
+            {"detail": f"mcp target not supported by the codex backend: {req.target}"},
+            status_code=503,
+        )
 
     prompt = build_prompt(req.message, req.history, req.locale, req.jira_locale)
     try:
