@@ -32,6 +32,8 @@ RUN useradd -m -u 10001 hermes
 
 WORKDIR /app
 COPY app/ /app/app/
+# board persona 檔(gateway 以 <app 上一層>/personas/board.md 解析 = /app/personas/board.md)。
+COPY personas/ /app/personas/
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

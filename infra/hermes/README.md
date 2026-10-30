@@ -51,9 +51,13 @@ dock(web,之後接)
 | `HERMES_MODEL_TEXT` | `claude-haiku-5-5` | anthropic | `/mrq-description`(純文字、零工具)的模型。 |
 | `HERMES_MODEL_DEEP` | `claude-sonnet-5-5` | anthropic | 請求帶 `tier="deep"`(或訊息含「詳細分析」「deep analysis」等)時改用。 |
 | `HERMES_LEDGER_PATH` | `/data/ledger.sqlite` | anthropic | SQLite 成本帳本路徑(須在持久 volume 上)。 |
-| `HERMES_DAILY_BUDGET_USD` | `0.5` | anthropic | 每日(UTC)預算上限,美元;達上限 → 503。 |
-| `HERMES_MONTHLY_BUDGET_USD` | `10.0` | anthropic | 每月(UTC)預算上限,美元;達上限 → 503。 |
-| `HERMES_DAILY_QUESTIONS_PER_CLIENT` | `10` | anthropic | `/chat` 每個來源每個 UTC 日的問題數上限;超過 → 429。 |
+| `HERMES_DAILY_BUDGET_USD` | `0.5` | anthropic | 每日(UTC)預算上限,美元,**逐 target** 各一桶(cmms / board 各 0.5);達上限 → 503。 |
+| `HERMES_DAILY_BUDGET_USD_CMMS` / `_BOARD` | (未設 = 用上一列) | anthropic | 逐 target 覆寫日預算。 |
+| `HERMES_MONTHLY_BUDGET_USD` | `10.0` | anthropic | 每月(UTC)預算上限,美元,**全 target 共用一池**;達上限 → 503。 |
+| `HERMES_DAILY_QUESTIONS_PER_CLIENT` | `10` | anthropic | cmms target:`/chat` 每個來源每個 UTC 日的問題數上限(逐 target 計數);超過 → 429。 |
+| `HERMES_DAILY_QUESTIONS_PER_CLIENT_BOARD` | `3` | anthropic | board target 的同上限,另計;`0` = 不限。 |
+| `BOARD_MCP_URL` | (無預設) | anthropic | board target 的 MCP 端點;未設 → board 請求 503。request 不能帶 URL。 |
+| `HERMES_PERSONA_BOARD_FILE` | (隨附 `personas/board.md`) | anthropic | board persona 檔路徑;讀不到 → 503。 |
 
 anthropic 後端的工具迴圈上限為 8 輪(`CHAT_MAX_ITERATIONS`);超限仍要呼叫工具 → 502。
 模型回 `refusal` 時回固定拒答句(依 locale),不假裝有答案。
@@ -81,7 +85,7 @@ anthropic 後端的工具迴圈上限為 8 輪(`CHAT_MAX_ITERATIONS`);超限仍�
 
 ### 成本與限額(anthropic)
 
-- `GET /health` 回報 `backend`,anthropic 時另有 `budget.daily` / `budget.monthly`(各含 `spent_usd` / `limit_usd` / `state`=ok|warning|exhausted)。
+- `GET /health` 回報 `backend` 與 `mcp_targets.{cmms,board}.{configured,url}`;anthropic 時另有 `budget.monthly`(共用池)與逐 target 的 `budget.daily.{cmms,board}`(各含 `spent_usd` / `limit_usd` / `state`=ok|warning|exhausted)。
 - 預算用盡 → `/chat` 與 `/mrq-description` 都回 **503**(cmms 顯示「預算」氣泡);fail-closed,呼叫前就拒絕。
   達 80% 為 warning。
 - 每來源每日問題數超限 → **429** + `Retry-After`(到 UTC 午夜的秒數;cmms 顯示「額度」氣泡)。
@@ -96,6 +100,16 @@ anthropic 後端的工具迴圈上限為 8 輪(`CHAT_MAX_ITERATIONS`);超限仍�
 
   Haiku 單次 prompt(input + cache read + cache write)> 100K token 時整筆改用長層價
   (0.50 / 2.50 / 0.625 / 0.05)。未列在表上的模型以表中最貴者估算(寧可高估、提早熔斷)。
+
+## 第二個產品(board target)
+
+完整對外契約見 [`CONTRACT.md`](CONTRACT.md)。重點:
+
+- request 帶 `target=board`(預設 `cmms`;其他值 → 422)。
+- 自己的 MCP URL:只從伺服端環境變數 `BOARD_MCP_URL` 取,request 不帶 URL;未設 → 503。
+- 自己的 persona 檔:`personas/board.md`(映像內 `/app/personas/board.md`),可用 `HERMES_PERSONA_BOARD_FILE` 替換。
+- 自己的每日桶:日預算與每來源題數都逐 target 分開計。
+- 月預算與 cmms 共用同一池。
 
 ## 部署 / 驗證
 
