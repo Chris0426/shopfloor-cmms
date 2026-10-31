@@ -22,7 +22,10 @@ RUN npm install -g @openai/codex
 # gateway 依賴(fastapi + uvicorn;gateway.py 不依賴 cmms/其他套件)。
 RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.32"
 # Anthropic 後端(SDK + MCP extra + mcp);codex 後端不使用但一併安裝。
-RUN pip install --no-cache-dir "anthropic[mcp]>=2.3.0" "mcp"
+# 釘死版本、與 repo 的 uv.lock 一致(anthropic 2.3.0 / mcp 1.28.0):mcp 2.x 的
+# streamable_http_client 介面不同(只 yield (read, write)),不釘版曾讓線上裝到 2.x 而 502。
+# 升級時 uv.lock 與這裡一起改。
+RUN pip install --no-cache-dir "anthropic[mcp]==2.3.0" "mcp==1.28.0"
 
 # CODEX_HOME 指向 volume → OAuth 憑證(auth.json)與 config 持久化跨重啟。
 ENV CODEX_HOME=/data/codex

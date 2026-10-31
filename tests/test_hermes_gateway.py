@@ -519,3 +519,29 @@ def test_mrq_description_codex_error_502(client, monkeypatch):
         "/mrq-description", json=_mrq_req(), headers={"X-Hermes-Secret": "test-secret"}
     )
     assert resp.status_code == 502
+
+
+# ── _leaf_error(chat failed log 的根因摘要)───────────────────────────────────
+def test_leaf_error_unwraps_nested_exception_group():
+    leaf = ValueError("not enough values to unpack (expected 3, got 2)")
+    nested = ExceptionGroup("outer", [ExceptionGroup("inner", [leaf, KeyError("x")])])
+    assert gateway._leaf_error(nested) == (
+        "ValueError: not enough values to unpack (expected 3, got 2)"
+    )
+    # 非 group 直接回自己;長訊息截到 200 字元
+    assert gateway._leaf_error(RuntimeError("y" * 500)) == "RuntimeError: " + "y" * 200
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "invalid key sk-ant-api03-SHOULD-NOT-LEAK",
+        "header Authorization: Bearer scoped-SHOULD-NOT-LEAK",
+        "bearer scoped-SHOULD-NOT-LEAK rejected",
+    ],
+)
+def test_leaf_error_masks_secret_bearing_messages(message):
+    group = ExceptionGroup("g", [ConnectionError(message)])
+    out = gateway._leaf_error(group)
+    assert out == "ConnectionError"
+    assert "SHOULD-NOT-LEAK" not in out

@@ -223,11 +223,15 @@ async def open_mcp_tools(
     from mcp.shared._httpx_utils import create_mcp_http_client
 
     headers = {**(extra_headers or {}), "Authorization": f"Bearer {scoped_token}"}
-    async with (
-        create_mcp_http_client(headers=headers) as http_client,
-        streamable_http_client(mcp_url, http_client=http_client) as (read, write, _),
-        ClientSession(read, write) as session,
-    ):
+    async with contextlib.AsyncExitStack() as stack:
+        http_client = await stack.enter_async_context(create_mcp_http_client(headers=headers))
+        # mcp 1.x yield (read, write, get_session_id)、2.x 只 yield (read, write);只取前兩個,
+        # 兩版都相容(映像已釘 1.28.0,這裡是第二道保險)。
+        transport = await stack.enter_async_context(
+            streamable_http_client(mcp_url, http_client=http_client)
+        )
+        read, write = transport[0], transport[1]
+        session = await stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
         listed = await session.list_tools()
         tools = sorted(listed.tools, key=lambda t: t.name)

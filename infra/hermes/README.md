@@ -80,8 +80,18 @@ anthropic 後端的工具迴圈上限為 8 輪(`CHAT_MAX_ITERATIONS`);超限仍�
 3. 金鑰只經環境變數傳入:compose 從 repo 根目錄 `.env` 讀取(`.env` 不入 git);
    不貼進 git、log、對話或 commit message。
 4. 輪替:在 Console 發新 key → 換掉環境變數值並重啟 hermes → 停用舊 key。
-5. 冒煙測試:`export ANTHROPIC_API_KEY=...`(當下 shell 設,不寫進檔案)後執行
-   `scripts/hermes_smoke.py`;會印出模型、usage、估算成本與一列帳本紀錄。
+5. 冒煙測試(會真的打一次 API、計費;印出模型、usage、估算成本與一列帳本紀錄):
+   - **Oracle host**(線上 compose):在 hermes 映像裡跑腳本,repo 唯讀掛進容器:
+
+     ```bash
+     cd /opt/shopfloor-cmms && docker compose run --rm --no-deps -T -v /opt/shopfloor-cmms:/repo:ro --entrypoint python hermes /repo/scripts/hermes_smoke.py
+     ```
+
+     `ANTHROPIC_API_KEY` 由 compose 從根目錄 `.env` 注入 hermes 服務,**不需要**在 shell
+     export。`--no-deps` 不會連帶起 app;腳本走純文字路徑、不碰 MCP。帳本預設寫暫存檔,
+     不污染 `/data/ledger.sqlite`。
+   - **本機開發**:`export ANTHROPIC_API_KEY=...`(當下 shell 設,不寫進檔案)後
+     `uv run scripts/hermes_smoke.py`。
 
 ### 成本與限額(anthropic)
 

@@ -830,6 +830,29 @@ def _record(book, endpoint: str, usage, outcome: str, target: str = "cmms") -> N
     )
 
 
+# 訊息含這些片段(不分大小寫)→ 可能帶 token / key,只記類別名、不記訊息。
+_SECRET_MARKERS = ("sk-ant", "bearer", "authorization", "x-api-key", "api_key", "api-key")
+_LEAF_ERROR_MAX = 200
+
+
+def _leaf_error(exc: BaseException) -> str:
+    """log 用的錯誤摘要:ExceptionGroup 一路取第一個子例外到葉子 → `類別: 訊息`。
+
+    MCP / anyio 的錯誤常包成多層 ExceptionGroup,只記外層類別看不出根因。
+    ★ 安全:訊息含 token / key 相關片段就只回類別名;訊息壓成單行並截到 200 字元。
+    """
+    leaf: BaseException = exc
+    while isinstance(leaf, BaseExceptionGroup) and leaf.exceptions:
+        leaf = leaf.exceptions[0]
+    name = type(leaf).__name__
+    message = str(leaf)
+    lowered = message.lower()
+    if not message or any(marker in lowered for marker in _SECRET_MARKERS):
+        return name
+    message = " ".join(message.split())[:_LEAF_ERROR_MAX]
+    return f"{name}: {message}"
+
+
 def _backend_error(exc: Exception) -> JSONResponse:
     llm = _sibling("llm_anthropic")
     if isinstance(exc, llm.LLMConfigError):
@@ -909,8 +932,8 @@ async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
         return _backend_error(exc)
     except Exception as exc:  # MCP 連線 / 協定錯誤(常以 ExceptionGroup 形式冒出)
         _logger.info(
-            "chat failed total=%.1fs model=%s error=%s",
-            time.perf_counter() - start, model, type(exc).__name__,
+            "chat failed total=%.1fs model=%s error=%s leaf=%s",
+            time.perf_counter() - start, model, type(exc).__name__, _leaf_error(exc),
         )
         return JSONResponse(
             {"detail": "agent backend error: tool server unavailable"}, status_code=502
