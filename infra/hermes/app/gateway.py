@@ -138,6 +138,11 @@ user asks to write/record/consolidate one or more work orders into a Jira MRQ:
 - Each verbatim note becomes one comment (kept in its original language, not translated);
   only the summary/description you generate use jira_locale.
 
+Work-order status wording — "open", "outstanding" or "active" means the active group
+(list_work_orders with active=true: OPEN, IN_PROGRESS, ON_HOLD). "Not yet closed" or
+"還沒結" also includes COMPLETED work orders that await closure: query status=COMPLETED
+as well and label those "awaiting closure".
+
 How-to guides (SOPs) — when the user asks HOW TO do or set up something in cmms (bind
 Telegram, create a Jira token, report an issue, etc.):
 - Call list_help_docs FIRST to find the matching guide.
