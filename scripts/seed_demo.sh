@@ -5,10 +5,12 @@
 #   2. generate the demo CSVs (scripts/generate_demo_data.py)
 #   3. run every `cmms` loader in dependency order
 #   4. create the demo accounts (admin / engineer / operator)
-#   5. play a small live scenario so the timeline + downtime engine have something to show
+#   5. play a small live scenario so the timeline + downtime engine have something to show,
+#      then the film's fixed story (scripts/seed_demo_story.py: EID-97061, WO-96320/96321)
 #
 # Safe to re-run: the loaders upsert, and steps 4-5 are skipped once the accounts exist
-# (set SEED_FORCE=1 to run them anyway). To start over: `docker compose down -v`.
+# (set SEED_FORCE=1 to run them anyway) - except the story, which is idempotent and
+# forward-only and therefore runs every time. To start over: `docker compose down -v`.
 #
 # Ledger mode (parity instance, docker-compose.seed.yml): when SEED_DIR is set and
 # non-empty the steps are instead
@@ -26,6 +28,8 @@
 #   SKIP_MIGRATE=1      do not run alembic
 #   SEED_DIR            ledger directory -> ledger mode (see above)
 #   SEED_UNTIL, SEED_EXPECT_WORLD   optional, passed to `cmms seed-events` when non-empty
+#   DEMO_STORY_UNTIL    optional (non-ledger mode), passed to seed_demo_story.py as --until
+#                       (ISO, naive = Asia/Taipei); empty = the whole story
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -146,6 +150,14 @@ if "$CMMS" user-create "$ADMIN_USER" --username "$ADMIN_USER" --name "Demo Admin
 else
   echo "    accounts already exist - skipping accounts + live scenario (SEED_FORCE=1 overrides)"
 fi
+
+# (f) the film's fixed story. Outside the sentinel on purpose: it is idempotent and
+#     forward-only, so a re-run fills in whatever is missing. It must come after (d):
+#     the PM work orders auto-number from max+1, and the story pins 96320/96321.
+echo "==> 5/5 (f) film story${DEMO_STORY_UNTIL:+ --until ${DEMO_STORY_UNTIL}}"
+STORY_ARGS=()
+[ -n "${DEMO_STORY_UNTIL:-}" ] && STORY_ARGS+=(--until "$DEMO_STORY_UNTIL")
+"$PY" scripts/seed_demo_story.py ${STORY_ARGS[@]+"${STORY_ARGS[@]}"}
 
 cat <<EOF
 

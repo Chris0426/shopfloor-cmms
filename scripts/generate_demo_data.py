@@ -22,6 +22,8 @@ therefore the same demo database) come out every time.
 
 Stable ids the seeding script relies on:
     assets      EID-97001 .. EID-97060   (EID-97058..97060 are retired)
+                EID-97061                (UV Oven #1, the film story asset — see
+                                          scripts/seed_demo_story.py)
     inventory   ES900001 .. ES900120 (EC / ES prefixes, see gen_inventory)
     work orders 96001 .. 96300
 
@@ -40,10 +42,15 @@ from pathlib import Path
 SEED = 20260714
 
 # 號段:全部落在不與任何真實資料撞值的合成區段(2026-10-28 以私有驗證器逐值核過)。
-EID_BASE = 97001      # EID-97001 .. EID-97060
+EID_BASE = 97001      # EID-97001 .. EID-97060(+ 故事資產 EID-97061)
 WO_BASE = 96001       # 工單 96001 .. 96300;示範情境開的單接在其後(96301 起)
 ITEM_BASE = 900001    # 料號 ES900001 .. / EC900002 ..
 TODAY = date(2026, 7, 14)  # fixed "today" so the demo is reproducible
+
+# 形象片固定劇本的資產(scripts/seed_demo_story.py 的 WO-96320 / 96321 掛在它上面)。
+# 刻意與 60 台主機群隔離:序號用自己的 RNG、不進歷史工單與 PM 的輪派,因此主 RNG 序列與
+# 既有 60 台的所有衍生資料(工單 / PM / 領料)逐位元不變;它的履歷只有劇本那兩張單。
+STORY_EID = "EID-97061"
 
 # ---------------------------------------------------------------- vocabulary
 
@@ -225,7 +232,7 @@ def write_csv(path: Path, header: list[str], rows: list[list[object]], encoding:
 
 
 def gen_assets(rng: random.Random) -> list[dict]:
-    """60 assets, EID-97001 .. EID-97060. The last three are retired."""
+    """61 assets: EID-97001 .. EID-97060 (the last three retired) + the story asset EID-97061."""
     assets: list[dict] = []
     n = 60
     for i in range(n):
@@ -249,7 +256,30 @@ def gen_assets(rng: random.Random) -> list[dict]:
                 "_retired": retired,
             }
         )
+    # 第 61 台 = 故事資產。序號用獨立 RNG(字串種子,決定論),不消耗主 RNG。
+    story_rng = random.Random(f"{SEED}:{STORY_EID}")
+    assets.append(
+        {
+            "compid": STORY_EID,
+            "comp_desc": "UV Oven #1",
+            "assettype": "Facility",
+            "assetsubtp": "OVEN",
+            "department": "EQ",
+            "line_no": "Zone B",
+            "model_no": "UVO-350",
+            "serial_no": f"SN{story_rng.randint(100000, 999999)}",
+            "available": "Yes",
+            "_family": "Oven",
+            "_retired": False,
+            "_story": True,
+        }
+    )
     return assets
+
+
+def fleet(assets: list[dict]) -> list[dict]:
+    """在用、且參與歷史工單 / PM 輪派的主機群(排除退役與故事資產)。"""
+    return [a for a in assets if not a["_retired"] and not a.get("_story")]
 
 
 def gen_tasks(rng: random.Random) -> list[dict]:
@@ -270,8 +300,9 @@ def gen_tasks(rng: random.Random) -> list[dict]:
 
 
 def gen_pm_schedules(rng: random.Random, assets: list[dict], tasks: list[dict]) -> list[dict]:
-    """80 PM schedules; a handful are already overdue so the 'due' list is not empty."""
-    live = [a for a in assets if not a["_retired"]]
+    """80 PM schedules + one per story asset; a handful are already overdue so the 'due'
+    list is not empty."""
+    live = fleet(assets)
     # PM 標題取自任務名稱(「機型 — 項目」),所以任務只能從「與資產同機型」的任務裡挑,
     # 否則會出現「FlexBonder — …」掛在 Sorter 上的錯配。
     tasks_by_family: dict[str, list[dict]] = {}
@@ -309,6 +340,28 @@ def gen_pm_schedules(rng: random.Random, assets: list[dict], tasks: list[dict]) 
                 "estlabor": f"{rng.choice([1, 2, 3])}.50",
                 "assignto": f"{rng.choice(VENDORS)} ({person})",
                 "suppress": "T" if i % 23 == 0 else "F",
+            }
+        )
+    # 故事資產各一筆季保養(同機型第一個任務)。固定日期、不動主 RNG:下次到期遠在劇本日
+    # (2026-10-01)之後,不會擠進 seed_demo.sh `pm-generate-due --limit 12` 的前 12 名而
+    # 推移 96304 起的 PM 工單號。
+    for asset in (a for a in assets if a.get("_story")):
+        task = tasks_by_family[asset["_family"]][0]
+        rows.append(
+            {
+                "pmid": f"PM-{len(rows) + 1:05d}",
+                "compid": asset["compid"],
+                "task_no": task["task_no"],
+                "pmfreqx": 3,
+                "pmfreq": "Months",
+                "pmnextdate": mmddyy(date(2026, 12, 2)),
+                "lastpmdate": mmddyy(date(2026, 9, 2)),
+                "lastpmno": "",
+                "dayscmpl": "7.00",
+                "standard": "2.00",
+                "estlabor": "1.50",
+                "assignto": f"{VENDORS[0]} (Jordan Lee)",
+                "suppress": "F",
             }
         )
     return rows
@@ -412,8 +465,10 @@ def gen_contacts(rng: random.Random) -> list[dict]:
 
 
 def gen_work_orders(rng: random.Random, assets: list[dict]) -> list[dict]:
-    """300 work orders over the last 18 months, realistic status / type mix."""
-    live = [a for a in assets if not a["_retired"]]
+    """300 work orders over the last 18 months, realistic status / type mix.
+
+    故事資產不在輪派內:它的履歷只有 seed_demo_story.py 的兩張單。"""
+    live = fleet(assets)
     rows = []
     start = TODAY - timedelta(days=548)  # ~18 months
     for i in range(300):

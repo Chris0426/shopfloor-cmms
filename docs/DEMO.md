@@ -1,6 +1,6 @@
 # Running the demo
 
-A throwaway instance with **synthetic data**: 60 machines, 120 spare parts, 80 PM
+A throwaway instance with **synthetic data**: 61 machines, 120 spare parts, 81 PM
 schedules, ~300 work orders spread over the last 18 months, and a few live ones you can
 act on. No real company, person, machine or part appears anywhere.
 
@@ -58,6 +58,12 @@ seeded ones are worth opening:
   issued against it. The part issue moved stock: the item's on-hand went down, and there
   is a `stock_transaction` behind it. It is waiting to be formally closed — which is
   exactly the close the agent proposes in step 3.
+- **WO 96321** on **UV Oven #1 (EID-97061)** — a fixed story with real timestamps rather
+  than "now": the oven failed at 14:17 on 2026-10-01, the operator reported it at 14:58, the
+  technician started at 15:21 and finished at 19:34. It sits **completed**, waiting for the
+  same governed close as 96301. Its only other history is **WO 96320**, an earlier sensor
+  fault, closed. Both come from `scripts/seed_demo_story.py`; the asset is kept out of the
+  generated fleet so the other 60 machines' data does not change.
 - **WO 96302** — on hold, reason **waiting for parts**. The hold reason is not cosmetic:
   it decides whether the clock keeps running. Waiting for a part means the machine is
   down; waiting for a *production window* means the machine is still making product, and
