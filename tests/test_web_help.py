@@ -121,7 +121,7 @@ class _FailingSender:
 
 
 @pytest.fixture
-def db_client(monkeypatch):
+def db_client(monkeypatch, docker_daemon):  # docker_daemon:無 Docker 時 skip,不炸 error
     """testcontainers PG + 種子帳號 jlee;patch get_sessionmaker 讓真 get_session 生效。
 
     回 (client, sm):client 已登入 jlee(get_current_user override),sm 供測試查落庫列。
