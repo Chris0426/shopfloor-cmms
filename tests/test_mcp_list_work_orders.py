@@ -39,3 +39,21 @@ def captured(monkeypatch):
 def test_status_normalized(captured, given, expected):
     asyncio.run(server.list_work_orders(status=given))
     assert captured[0]["status"] == expected
+
+
+def test_active_sends_statuses_group(captured):
+    asyncio.run(server.list_work_orders(active=True))
+    assert captured[0]["statuses"] == ["OPEN", "IN_PROGRESS", "ON_HOLD"]
+    assert captured[0]["status"] is None
+
+
+def test_status_wins_over_active(captured):
+    asyncio.run(server.list_work_orders(active=True, status="completed"))
+    assert captured[0]["status"] == "COMPLETED"
+    assert captured[0]["statuses"] is None
+
+
+def test_default_sends_neither(captured):
+    asyncio.run(server.list_work_orders())
+    assert captured[0]["status"] is None
+    assert captured[0]["statuses"] is None

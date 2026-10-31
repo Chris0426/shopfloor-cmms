@@ -276,27 +276,38 @@ async def get_work_order(work_order_no: int) -> dict[str, Any] | None:
         return WorkOrderRead.model_validate(wo).model_dump(mode="json") if wo else None
 
 
+# 「進行中」群組(未到終態);domain 層無等義常數(只有 TERMINAL_STATUSES),故在工具邊界定義
+ACTIVE_STATUSES = ("OPEN", "IN_PROGRESS", "ON_HOLD")
+
+
 @mcp.tool()
 async def list_work_orders(
     asset_id: str | None = None,
     work_type: str | None = None,
     status: str | None = None,
     assigned_vendor: str | None = None,
+    active: bool = False,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """列工單(新到舊),可依設備 / 類型 / 狀態 / 承包商過濾。
 
     status 不分大小寫(內部轉大寫);空白視為不過濾。可用值:OPEN / IN_PROGRESS /
     ON_HOLD / COMPLETED / CLOSED / CANCELLED / VOIDED(後三者為終態)。
+    使用者說 open / outstanding / not yet closed 通常指 active(OPEN / IN_PROGRESS / ON_HOLD),
+    用 `active=True` 一次撈齊;只有明確指定單一狀態時才用 `status`。
+    `active=True` 與 `status` 同時給時以 `status` 為準(單一狀態比群組更具體)。
     work_type 為原系統代碼(如 REACTIVE、PM),照原樣精確比對。
     """
     # 工具邊界正規化:DB 狀態碼是大寫,LLM 常傳小寫;service 層保持精確比對、不改
     status = (status or "").strip().upper() or None
+    # 二擇一:有 status 就不傳 statuses(service 兩者會疊加 where,避免矛盾)
+    statuses = list(ACTIVE_STATUSES) if active and status is None else None
     async with get_sessionmaker()() as session:
         wos = await WorkOrderService(session).list_work_orders(
             asset_id=asset_id,
             work_type=work_type,
             status=status,
+            statuses=statuses,
             assigned_vendor=assigned_vendor,
             limit=limit,
         )
