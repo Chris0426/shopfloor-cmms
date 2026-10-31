@@ -829,3 +829,69 @@ def test_mrq_description_is_cmms_only(anth, monkeypatch, tmp_path):
     _spend_target(0.5, "cmms")  # cmms 日預算用罄 → /mrq-description 503
     resp = client.post("/mrq-description", headers=headers, json=body)
     assert resp.status_code == 503 and resp.json() == {"detail": "daily budget exhausted"}
+
+
+# ── 題數:成功才計;/health 題數總計 ──────────────────────────────────────────────
+def test_question_quota_left_does_not_count(tmp_path):
+    book, _ = _book(tmp_path)
+    a = ledger.client_hash("203.0.113.7", SECRET)
+    assert book.question_quota_left(a, 0) is True  # 0 = 不限
+    for _ in range(3):
+        assert book.question_quota_left(a, 2) is True  # 只檢查,不改計數
+    assert book.questions_today()["total"] == 0
+    book.take_question(a, 2)
+    assert book.question_quota_left(a, 2) is True
+    book.take_question(a, 2)
+    assert book.question_quota_left(a, 2) is False
+    assert book.questions_today()["total"] == 2
+
+
+def test_questions_today_by_target_without_hashes(tmp_path):
+    book, _ = _book(tmp_path)
+    for _ in range(2):
+        book.take_question("cmms:aaa", 99)
+    book.take_question("cmms:bbb", 99)
+    book.take_question("board:ccc", 99)
+    book.take_question("legacyhash", 99)  # 舊格式(無冒號)歸 cmms
+    out = book.questions_today()
+    assert out == {
+        "day": "2026-10-30",
+        "total": 5,
+        "by_target": {
+            "cmms": {"questions": 4, "clients": 3},
+            "board": {"questions": 1, "clients": 1},
+        },
+    }
+    assert "aaa" not in str(out) and "legacyhash" not in str(out)
+
+
+def test_health_includes_questions_without_hashes(anth):
+    client, use = anth
+    use(FakeClient([_msg("ok")]))
+    assert _chat(client).status_code == 200
+    body = client.get("/health").json()
+    assert body["questions"]["total"] == 1
+    assert body["questions"]["by_target"]["cmms"] == {"questions": 1, "clients": 1}
+    assert body["questions"]["by_target"]["board"] == {"questions": 0, "clients": 0}
+    assert ledger.client_hash("203.0.113.7", SECRET) not in str(body)
+
+
+def test_backend_failures_do_not_consume_questions(anth, tmp_path):
+    client, use = anth
+    boom = anthropic.InternalServerError("x", response=_resp(500), body=None)
+    for _ in range(3):  # 超過每日上限 2:失敗不計,所以仍是 502 而非 429
+        use(FakeClient([_msg(stop="tool_use")], exc=boom))
+        assert _chat(client).status_code == 502
+    use(FakeClient([_msg(stop="tool_use")], exc=RuntimeError("tool server down")))
+    assert _chat(client).status_code == 502
+    assert _questions_rows(tmp_path) == []
+    use(FakeClient([_msg("ok")]))
+    assert _chat(client).status_code == 200
+    assert [n for _, n in _questions_rows(tmp_path)] == [1]
+
+
+def test_refusal_counts_one_question(anth, tmp_path):
+    client, use = anth
+    use(FakeClient([_msg(stop="refusal")]))
+    assert _chat(client).status_code == 200
+    assert [n for _, n in _questions_rows(tmp_path)] == [1]

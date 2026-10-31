@@ -95,10 +95,11 @@ anthropic 後端的工具迴圈上限為 8 輪(`CHAT_MAX_ITERATIONS`);超限仍�
 
 ### 成本與限額(anthropic)
 
-- `GET /health` 回報 `backend` 與 `mcp_targets.{cmms,board}.{configured,url}`;anthropic 時另有 `budget.monthly`(共用池)與逐 target 的 `budget.daily.{cmms,board}`(各含 `spent_usd` / `limit_usd` / `state`=ok|warning|exhausted)。
+- `GET /health` 回報 `backend` 與 `mcp_targets.{cmms,board}.{configured,url}`;anthropic 時另有 `budget.monthly`(共用池)與逐 target 的 `budget.daily.{cmms,board}`(各含 `spent_usd` / `limit_usd` / `state`=ok|warning|exhausted),以及 `questions`(今日題數總計:`total` 與逐 target 的 `questions` / `clients`,只有計數、不含來源雜湊,維運不用進容器查 SQLite)。
 - 預算用盡 → `/chat` 與 `/mrq-description` 都回 **503**(cmms 顯示「預算」氣泡);fail-closed,呼叫前就拒絕。
   達 80% 為 warning。
 - 每來源每日問題數超限 → **429** + `Retry-After`(到 UTC 午夜的秒數;cmms 顯示「額度」氣泡)。
+  題數在**拿到回答或 refusal 後**才計;502 / 503 / timeout 不扣,訪客在故障期間重試不會耗光額度。
   來源鍵(web = 使用者 IP)以 gateway secret 做 HMAC-SHA256,只存雜湊前綴,不存原值。
 - 價格寫死在 `app/ledger.py` 的 `PRICES`,2026-10-29 核對(USD / 百萬 token):
 

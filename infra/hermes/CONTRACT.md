@@ -69,12 +69,13 @@ Gate order in `/chat` (anthropic backend):
 2. Target MCP URL configured (503 `mcp target not configured`).
 3. Board only: persona loads (503 `persona not available`).
 4. Monthly + this target's daily budget (503; 503 `ledger unavailable`).
-5. Per-source question cap, atomic check-and-count (429).
+5. Per-source question cap, check only (429).
 6. Anthropic client built (503 `agent backend not configured`), then the LLM call (502 / 503 above).
 
-Steps 1-4 reject before a question is counted and before any money is spent. A 429 is also free.
-Step 6 failures happen after the question was counted (a missing API key still consumes one
-question). Failed LLM calls that already consumed tokens are recorded in the ledger as `error`.
+A question is counted against the per-source cap only after the LLM returned an answer or a
+refusal. Rejections in steps 1-5 and failures in step 6 (502 / 503 / timeout) do not count, so a
+visitor retrying through an outage keeps their daily questions. Failed LLM calls that already
+consumed tokens are still recorded in the ledger as `error` and still count against the budget.
 
 ## 5. `GET /health`
 
@@ -92,6 +93,14 @@ question). Failed LLM calls that already consumed tokens are recorded in the led
       "cmms":  {"spent_usd": 0.41, "limit_usd": 0.5, "state": "warning"},
       "board": {"spent_usd": 0.0,  "limit_usd": 0.5, "state": "ok"}
     }
+  },
+  "questions": {
+    "day": "2026-10-31",
+    "total": 7,
+    "by_target": {
+      "cmms":  {"questions": 7, "clients": 3},
+      "board": {"questions": 0, "clients": 0}
+    }
   }
 }
 ```
@@ -100,8 +109,10 @@ question). Failed LLM calls that already consumed tokens are recorded in the led
   `configured`/`url` for cmms reflect `CMMS_MCP_URL` only (the code default
   `https://cmms.example.com/mcp` is used for calls but is not shown here when the env is unset).
 - `state` is `ok`, `warning` (spent >= 80% of limit) or `exhausted` (spent >= limit, or limit <= 0).
-- `budget` appears only when `backend` is `anthropic`; if the ledger cannot be opened it is the
-  string `"unavailable"`.
+- `budget` and `questions` appear only when `backend` is `anthropic`; if the ledger cannot be
+  opened each is the string `"unavailable"`.
+- `questions` is today's (UTC) per-source question count summed per target, plus the number of
+  distinct sources; it never exposes a source key or hash.
 - `url` is exposed unauthenticated: keep `/health` on the private network.
 
 ## 6. Limits and budgets
@@ -164,3 +175,5 @@ estimated at the most expensive listed price.
   (`budget.daily.cmms`, `budget.daily.board`); `mcp_targets` was added.
 - The question-bucket key gained the `cmms:` prefix, so per-source counters restart once on the
   UTC day of deploy.
+- 2026-10-31: a question is counted only after an answer or refusal (backend errors no longer
+  consume the daily cap); `/health` gained `questions`.

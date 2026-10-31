@@ -20,7 +20,9 @@ RUN apt-get update \
 RUN npm install -g @openai/codex
 
 # gateway 依賴(fastapi + uvicorn;gateway.py 不依賴 cmms/其他套件)。
-RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.32"
+# ★ 所有依賴一律釘版、與 uv.lock 一致:demo_reset.sh 每 30 分鐘 `compose build` 一次,
+#   不釘版等於每輪都可能悄悄升級(2026-10-31 mcp 2.x 事故就是這樣來的)。
+RUN pip install --no-cache-dir "fastapi==0.138.1" "uvicorn[standard]==0.49.0"
 # Anthropic 後端(SDK + MCP extra + mcp);codex 後端不使用但一併安裝。
 # 釘死版本、與 repo 的 uv.lock 一致(anthropic 2.3.0 / mcp 1.28.0):mcp 2.x 的
 # streamable_http_client 介面不同(只 yield (read, write)),不釘版曾讓線上裝到 2.x 而 502。

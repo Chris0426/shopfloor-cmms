@@ -212,17 +212,28 @@ class Ledger:
             raise BudgetExhausted("daily")
 
     # ── 每來源每日問題上限 ──
+    def _question_count(self, day: str, client: str) -> int:
+        """該來源當日已計題數(呼叫端須已持有 `_lock`)。"""
+        row = self._conn.execute(
+            "SELECT n FROM questions WHERE day=? AND client=?", (day, client)
+        ).fetchone()
+        return row[0] if row else 0
+
+    def question_quota_left(self, client: str, limit: int) -> bool:
+        """只檢查、不計數:今日還有名額 → True。limit <= 0 = 不限。"""
+        if limit <= 0:
+            return True
+        _, day, _ = self._keys()
+        with self._lock:
+            return self._question_count(day, client) < limit
+
     def take_question(self, client: str, limit: int) -> bool:
         """原子地「檢查並計一題」;已達上限 → False(不計)。limit <= 0 = 不限。"""
         if limit <= 0:
             return True
         _, day, _ = self._keys()
         with self._lock, self._conn:
-            row = self._conn.execute(
-                "SELECT n FROM questions WHERE day=? AND client=?", (day, client)
-            ).fetchone()
-            n = row[0] if row else 0
-            if n >= limit:
+            if self._question_count(day, client) >= limit:
                 return False
             self._conn.execute(
                 "INSERT INTO questions(day, client, n) VALUES (?,?,1) "
@@ -230,6 +241,29 @@ class Ledger:
                 (day, client),
             )
         return True
+
+    def questions_today(self) -> dict:
+        """今日題數總計(給 /health):不含任何來源鍵或雜湊,只有計數。
+
+        target 取 client 欄冒號前的前綴;沒有冒號的舊列(target 前綴出現前的格式)歸 cmms。
+        """
+        _, day, _ = self._keys()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT CASE WHEN instr(client, ':') > 0 "
+                "THEN substr(client, 1, instr(client, ':') - 1) ELSE ? END AS t, "
+                "COALESCE(SUM(n),0), COUNT(*) FROM questions WHERE day=? GROUP BY t",
+                (DEFAULT_TARGET, day),
+            ).fetchall()
+        by_target = {t: {"questions": 0, "clients": 0} for t in TARGETS}
+        for t, n, k in rows:
+            if t in by_target:
+                by_target[t] = {"questions": int(n), "clients": int(k)}
+        return {
+            "day": day,
+            "total": sum(v["questions"] for v in by_target.values()),
+            "by_target": by_target,
+        }
 
     def seconds_until_utc_midnight(self) -> int:
         now = self._now()

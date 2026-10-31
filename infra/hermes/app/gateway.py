@@ -783,15 +783,20 @@ async def health() -> dict[str, object]:
     """存活 + 後端 + 各 MCP target 設定狀態;anthropic 後端另回預算狀態(ok / warning / exhausted)。
 
     budget = {"monthly": {...}, "daily": {"cmms": {...}, "board": {...}}}(月共用、日逐 target)。
+    questions = {"day", "total", "by_target": {<target>: {"questions", "clients"}}}:今日題數總計,
+    只有計數、不含來源雜湊;帳本打不開時與 budget 一樣回 "unavailable"。
     """
     out: dict[str, object] = {"status": "ok", "backend": _backend()}
     out["mcp_targets"] = _mcp_targets()
     if out["backend"] == "anthropic":
         try:
-            out["budget"] = _ledger().budget_state()
+            book = _ledger()
+            out["budget"] = book.budget_state()
+            out["questions"] = book.questions_today()
         except Exception as exc:  # 帳本打不開:誠實回報,不假裝預算正常
             _logger.warning("ledger unavailable: %s", type(exc).__name__)
             out["budget"] = "unavailable"
+            out["questions"] = "unavailable"
     return out
 
 
@@ -891,7 +896,8 @@ async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
     # 題數分桶鍵 = "<target>:<來源雜湊>" —— 不同 target 的計數永不互撞。
     source = led.client_hash(req.client_id or "unknown", _expected_secret() or "")
     client_key = f"{target}:{source}"
-    if not book.take_question(client_key, _questions_per_client(target)):
+    # 題數「回答成功(含 refusal)後才計」:這裡只檢查名額,502 / 503 / timeout 不耗訪客額度。
+    if not book.question_quota_left(client_key, _questions_per_client(target)):
         _logger.info("chat rejected reason=daily-question-limit")
         return JSONResponse(
             {"detail": "daily question limit reached"},
@@ -940,6 +946,8 @@ async def _chat_anthropic(req: ChatRequest, start: float) -> JSONResponse:
         )
     u = result.usage
     _record(book, "chat", u, "refusal" if result.refused else "ok", target)
+    # 成功才計一題;名額已在呼叫前檢查過,回傳值忽略。併發搶最後一題時可能多計一次,可接受。
+    book.take_question(client_key, _questions_per_client(target))
     _logger.info(
         "chat done total=%.1fs model=%s api_calls=%d in=%d out=%d cache_read=%d "
         "cache_write=%d usd=%.5f history_turns=%d refused=%s",
