@@ -2229,6 +2229,17 @@ class WorkOrderService(DomainService):
             )
             if existing_pending is not None:
                 return existing_pending
+        if operation == "close_work_order":
+            # 結案只允許 COMPLETED→CLOSED:註定 confirm 不了的提案不收(提案本身就是一筆記錄,
+            # 非法的不該留);不建提案列、不寫審計。
+            wo_no = params.get("work_order_no")
+            wo = await self.session.get(WorkOrder, wo_no) if wo_no is not None else None
+            if wo is None:
+                raise WorkOrderError(f"work_order {wo_no} not found")
+            if wo.status != "COMPLETED":
+                raise InvalidTransition(
+                    f"wo {wo_no}: {wo.status} -> CLOSED not allowed (close requires COMPLETED)"
+                )
         if operation == "update_item":
             item_code = params.get("item_code")
             if not item_code or await self.session.get(InventoryItem, item_code) is None:

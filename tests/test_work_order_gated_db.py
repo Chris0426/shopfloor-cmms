@@ -243,6 +243,36 @@ async def test_reject_requires_human(session) -> None:
         await svc.reject(pending_token=p.pending_token, by=Actor.agent("analytics"), at=_ts(10, 1))
 
 
+async def test_propose_close_rejects_non_completed(session) -> None:
+    """結案提案在建立階段就擋非 COMPLETED 的單:拋 InvalidTransition、proposal 表 0 列。"""
+    from sqlalchemy import func, select
+
+    from cmms.domain.work_order.models import PendingProposal
+    from cmms.domain.work_order.service import InvalidTransition
+
+    svc = WorkOrderService(session)
+    bob = Actor.human("bob")
+    wo = await svc.open_work_order(asset_id="EID-001", work_type="REACTIVE", actor=bob, at=_ts(9))
+    no = wo.work_order_no
+    await svc.start_work(no, bob, at=_ts(9, 30))
+    kw = dict(
+        operation="close_work_order", params={"work_order_no": no},
+        proposed_by=Actor.agent("analytics"),
+    )
+    with pytest.raises(InvalidTransition, match="IN_PROGRESS -> CLOSED not allowed.*COMPLETED"):
+        await svc.propose(**kw, at=_ts(10))
+    with pytest.raises(WorkOrderError, match="not found"):
+        await svc.propose(
+            operation="close_work_order", params={"work_order_no": 99999999},
+            proposed_by=Actor.agent("analytics"), at=_ts(10),
+        )
+    n = await session.scalar(select(func.count()).select_from(PendingProposal))
+    assert n == 0
+    await svc.complete_work(no, bob, at=_ts(10, 30))
+    p = await svc.propose(**kw, at=_ts(11))
+    assert p.status == "PENDING" and p.dry_run_diff["from_status"] == "COMPLETED"
+
+
 async def test_confirm_close_via_two_phase(session) -> None:
     svc = WorkOrderService(session)
     await _seed_admin(session)  # alice = active admin

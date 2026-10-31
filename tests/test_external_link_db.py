@@ -120,8 +120,15 @@ async def test_list_proposals(session) -> None:
         params={"asset_id": "EID-002", "work_type": "REACTIVE"},
         proposed_by=HERMES,
     )
+    # close 提案只收 COMPLETED 的單:先開一張並推到 COMPLETED
+    admin = Actor.human("adm")
+    wo = await svc.open_work_order(asset_id="EID-002", work_type="REACTIVE", actor=admin)
+    await svc.start_work(wo.work_order_no, admin)
+    await svc.complete_work(wo.work_order_no, admin)
     p2 = await svc.propose(
-        operation="close_work_order", params={"work_order_no": 30167}, proposed_by=HERMES
+        operation="close_work_order",
+        params={"work_order_no": wo.work_order_no},
+        proposed_by=HERMES,
     )
     pending = await svc.list_proposals()
     assert {p.pending_token for p in pending} == {p1.pending_token, p2.pending_token}
