@@ -598,11 +598,13 @@ def test_board_persona_missing_503_no_question_counted(anth, tools, monkeypatch,
     assert fake.runner_kwargs is None and _questions_rows(tmp_path) == []
 
 
-def test_packaged_board_persona_is_short_public_placeholder():
+def test_packaged_board_persona_is_final_and_public_safe():
+    """定稿(2026-10-31)取代佔位稿:非空、宣告唯讀與合成資料、不提 gateway 內部名。"""
     text = _PACKAGED_BOARD_PERSONA.read_text(encoding="utf-8")
-    assert len(text.splitlines()) <= 25
+    assert len(text.splitlines()) >= 50
     lowered = text.lower()
     assert "read-only" in lowered and "synthetic" in lowered
+    assert "hermes" not in lowered
     assert _PACKAGED_BOARD_PERSONA.resolve() == gw._BOARD_PERSONA_DEFAULT_PATH
 
 

@@ -151,7 +151,7 @@ Prices in USD per million tokens (`PRICES` in `app/ledger.py`, checked 2026-10-2
 Haiku prompts above 100K tokens are billed at 0.50 / 2.50 / 0.625 / 0.05. Unlisted models are
 estimated at the most expensive listed price.
 
-## 8. Networking for the board target (proposed, pending the Board team's decision)
+## 8. Networking for the board target
 
 - The gateway runs in Docker on a bridge network. A container cannot reach ports bound to the
   host's `127.0.0.1`; `host.docker.internal:host-gateway` resolves to the docker0 address
@@ -162,9 +162,10 @@ estimated at the most expensive listed price.
   `-R 127.0.0.1:8797:127.0.0.1:8797`. `8797` on the Oracle side is the gateway's host-loopback
   publish port (compose `127.0.0.1:8797:8080`, container port 8080); `8797` on the Board host is
   what the Board client dials; `18050` is the Board MCP as seen from the Oracle host (docker0 bind).
-- hermes gets `extra_hosts: ["host.docker.internal:host-gateway"]` and
-  `BOARD_MCP_URL=http://host.docker.internal:18050/mcp`
-  (commented lines are in `docker-compose.public.yml`).
+- hermes has `extra_hosts: ["host.docker.internal:host-gateway"]` in `docker-compose.public.yml`
+  and reads `BOARD_MCP_URL` from the host's `.env` (`BOARD_MCP_URL: ${BOARD_MCP_URL:-}`; unset or
+  empty = board target off). Enable with `BOARD_MCP_URL=http://host.docker.internal:18050/mcp`
+  and `docker compose up -d hermes`; `/health.mcp_targets.board.configured` turns true.
 - Not recommended: `network_mode: host` (hermes would have to bind 0.0.0.0 for the app container
   to reach it).
 
@@ -177,3 +178,4 @@ estimated at the most expensive listed price.
   UTC day of deploy.
 - 2026-10-31: a question is counted only after an answer or refusal (backend errors no longer
   consume the daily cap); `/health` gained `questions`.
+- 2026-10-31: the board persona is final (`personas/board.md`); `BOARD_MCP_URL` is env-driven in compose.

@@ -57,8 +57,9 @@ services:
       # 預算 / 限流沿用程式預設(見 infra/hermes/app/gateway.py):HERMES_DAILY_BUDGET_USD、
       # HERMES_MONTHLY_BUDGET_USD、HERMES_DAILY_QUESTIONS_PER_CLIENT、HERMES_MAX_CONCURRENCY、
       # HERMES_LLM_TIMEOUT;要調整時在這裡加鍵即可。
-      # 第二個產品(board)預設關閉;啟用方式見 infra/hermes/CONTRACT.md §8。
-      # BOARD_MCP_URL: http://host.docker.internal:18050/mcp
+      # 第二個產品(board)預設關閉:在 host 的 .env 設 BOARD_MCP_URL 即啟用
+      # (值見 infra/hermes/CONTRACT.md §8;未設或空字串 = 未設定)。
+      BOARD_MCP_URL: ${BOARD_MCP_URL:-}
       # HERMES_DAILY_QUESTIONS_PER_CLIENT_BOARD: "3"
     # board MCP 經 host 端 tunnel(綁在 docker0 位址)進來;容器要靠此別名才連得到 host(見 CONTRACT §8)。
     extra_hosts:
