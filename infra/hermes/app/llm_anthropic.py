@@ -207,6 +207,28 @@ def translate_error(exc: Exception) -> Exception:
     return exc
 
 
+def _first_api_error(exc: BaseException) -> anthropic.APIError | None:
+    """遞迴走訪(巢狀)ExceptionGroup 的所有葉子,回第一個 anthropic.APIError;沒有則 None。
+
+    group 內可能同時有 CancelledError 與真正的 APIError,所以不能只看 exceptions[0]。
+    """
+    if isinstance(exc, anthropic.APIError):
+        return exc
+    if isinstance(exc, BaseExceptionGroup):
+        for sub in exc.exceptions:
+            found = _first_api_error(sub)
+            if found is not None:
+                return found
+    return None
+
+
+def _translated_with_usage(api: anthropic.APIError, usage: Usage) -> Exception:
+    """translate_error + 把已花掉的 usage 掛上去,讓 gateway 仍能記帳。"""
+    err = translate_error(api)
+    err.usage = usage
+    return err
+
+
 # ── MCP 工具(seam:測試以假實作取代)─────────────────────────────────────────
 @contextlib.asynccontextmanager
 async def open_mcp_tools(
@@ -281,9 +303,13 @@ async def chat(
                 usage.add(msg)
                 last = msg
     except anthropic.APIError as exc:
-        err = translate_error(exc)
-        err.usage = usage  # 已花掉的部分仍要記帳
-        raise err from exc
+        raise _translated_with_usage(exc, usage) from exc
+    except BaseExceptionGroup as eg:
+        # MCP 的 anyio task group 會把迴圈內的 SDK 例外包成 group;解包後走同一套對應。
+        api = _first_api_error(eg)
+        if api is None:
+            raise  # 沒有 APIError:原樣冒出(gateway 回 502 tool server unavailable)
+        raise _translated_with_usage(api, usage) from eg
     if last is None:
         raise LLMBackendError("anthropic produced no message")
     if last.stop_reason == "refusal":

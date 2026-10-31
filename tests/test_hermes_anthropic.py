@@ -18,6 +18,7 @@ gateway / llm_anthropic / ledger 是獨立小服務(不在 src/cmms 套件內),�
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import datetime as dt
 import importlib.util
@@ -911,3 +912,65 @@ def test_refusal_counts_one_question(anth, tmp_path):
     use(FakeClient([_msg(stop="refusal")]))
     assert _chat(client).status_code == 200
     assert [n for _, n in _questions_rows(tmp_path)] == [1]
+
+
+# ── MCP task group 把 SDK 例外包成 ExceptionGroup ────────────────────────────────
+def _calls_rows(tmp_path):
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "ledger.sqlite")
+    try:
+        return conn.execute("SELECT outcome, input_tokens FROM calls").fetchall()
+    finally:
+        conn.close()
+
+
+def test_grouped_auth_error_is_503_not_configured(anth, tmp_path):
+    client, use = anth
+    auth = anthropic.AuthenticationError("x", response=_resp(401), body=None)
+    use(FakeClient([], exc=ExceptionGroup("mcp", [auth])))
+    resp = _chat(client)
+    assert resp.status_code == 503 and "agent backend not configured" in resp.json()["detail"]
+    assert _questions_rows(tmp_path) == []  # 失敗不計題
+
+
+def test_grouped_rate_limit_is_502_with_retry_after(anth, tmp_path):
+    client, use = anth
+    rate = anthropic.RateLimitError("x", response=_resp(429, {"retry-after": "30"}), body=None)
+    use(FakeClient([], exc=ExceptionGroup("mcp", [rate])))
+    resp = _chat(client)
+    assert resp.status_code == 502 and resp.headers["retry-after"] == "30"
+    assert _questions_rows(tmp_path) == []
+
+
+def test_nested_group_with_cancelled_error_finds_bad_request(anth, tmp_path):
+    client, use = anth
+    bad = anthropic.BadRequestError("x", response=_resp(400), body=None)
+    nested = BaseExceptionGroup(
+        "outer", [asyncio.CancelledError(), ExceptionGroup("inner", [bad])]
+    )
+    use(FakeClient([], exc=nested))
+    resp = _chat(client)
+    assert resp.status_code == 502 and "agent backend error" in resp.json()["detail"]
+    assert "tool server unavailable" not in resp.json()["detail"]
+    assert _questions_rows(tmp_path) == []
+
+
+def test_grouped_api_error_books_spent_usage_in_ledger(anth, tmp_path):
+    client, use = anth
+    bad = anthropic.BadRequestError("x", response=_resp(400), body=None)
+    use(FakeClient([_msg(stop="tool_use", inp=321, out=7)], exc=ExceptionGroup("mcp", [bad])))
+    assert _chat(client).status_code == 502
+    assert _calls_rows(tmp_path) == [("error", 321)]
+    assert _questions_rows(tmp_path) == []
+
+
+def test_group_without_api_error_stays_tool_server_unavailable_no_ledger(anth, tmp_path):
+    client, use = anth
+    use(FakeClient([_msg(stop="tool_use", inp=321, out=7)],
+                   exc=ExceptionGroup("mcp", [ConnectionError("refused")])))
+    resp = _chat(client)
+    assert resp.status_code == 502
+    assert resp.json() == {"detail": "agent backend error: tool server unavailable"}
+    assert _calls_rows(tmp_path) == []  # 維持現狀:generic 分支不記帳
+    assert _questions_rows(tmp_path) == []
