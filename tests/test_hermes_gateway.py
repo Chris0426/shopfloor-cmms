@@ -61,8 +61,8 @@ def test_health_ok(client, monkeypatch):
         "status": "ok",
         "backend": "codex",
         "mcp_targets": {
-            "cmms": {"configured": False, "url": None},
-            "board": {"configured": False, "url": None},
+            "cmms": {"configured": False, "url": None, "reachable": None},
+            "board": {"configured": False, "url": None, "reachable": None},
         },
     }
 
@@ -70,9 +70,10 @@ def test_health_ok(client, monkeypatch):
 def test_health_mcp_targets_codex(client, monkeypatch):
     monkeypatch.setenv("CMMS_MCP_URL", "http://app:8080/mcp")
     monkeypatch.delenv("BOARD_MCP_URL", raising=False)
+    monkeypatch.setattr(gateway, "_tcp_reachable", lambda url, timeout=1.0: True)
     targets = client.get("/health").json()["mcp_targets"]
-    assert targets["cmms"] == {"configured": True, "url": "http://app:8080/mcp"}
-    assert targets["board"] == {"configured": False, "url": None}
+    assert targets["cmms"] == {"configured": True, "url": "http://app:8080/mcp", "reachable": True}
+    assert targets["board"] == {"configured": False, "url": None, "reachable": None}
 
 
 # ── secret 閘門 ──────────────────────────────────────────────────────────────

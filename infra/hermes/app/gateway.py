@@ -53,10 +53,12 @@ import os
 import pathlib
 import secrets
 import shutil
+import socket
 import sys
 import tempfile
 import time
 from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
@@ -306,11 +308,42 @@ def _mcp_url(target: str = "cmms") -> str | None:
 
 
 def _mcp_targets() -> dict[str, dict[str, object]]:
-    """/health 用:各 target 是否已設定(env 存在且非空)與其 URL;不探測網路。"""
+    """/health 用:各 target 是否已設定(env 存在且非空)與其 URL;不探測網路(見 _probe_targets)。"""
     out: dict[str, dict[str, object]] = {}
     for target, env in _MCP_URL_ENV.items():
         url = os.environ.get(env) or None
         out[target] = {"configured": url is not None, "url": url}
+    return out
+
+
+def _tcp_reachable(url: str, timeout: float = 1.0) -> bool:
+    """對 url 的 host:port 做一次 TCP connect 探測;成功 True,任何例外(含壞 url)False。
+
+    只驗 TCP 能不能連上,不發 HTTP、不碰 MCP 協定。url 沒寫 port 時依 scheme 預設 80 / 443。
+    """
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+        if not host:
+            return False
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+async def _probe_targets() -> dict[str, dict[str, object]]:
+    """_mcp_targets() 加上 reachable:已設定者併發 TCP 探測(各 1 秒 timeout),未設定者為 None。"""
+    out = _mcp_targets()
+    configured = [t for t, v in out.items() if v["configured"]]
+    results = await asyncio.gather(
+        *(asyncio.to_thread(_tcp_reachable, str(out[t]["url"])) for t in configured)
+    )
+    for t in out:
+        out[t]["reachable"] = None
+    for t, ok in zip(configured, results, strict=True):
+        out[t]["reachable"] = bool(ok)
     return out
 
 
@@ -780,14 +813,16 @@ app = FastAPI(title="Hermes gateway", docs_url=None, redoc_url=None, openapi_url
 
 @app.get("/health")
 async def health() -> dict[str, object]:
-    """存活 + 後端 + 各 MCP target 設定狀態;anthropic 後端另回預算狀態(ok / warning / exhausted)。
+    """存活 + 後端 + 各 MCP target 設定狀態與 TCP 可達性;anthropic 後端另回預算狀態。
 
+    mcp_targets.<t> = {"configured", "url", "reachable"}:reachable 只是 TCP connect
+    (1 秒 timeout),不是 MCP 握手;未設定的 target 為 None。
     budget = {"monthly": {...}, "daily": {"cmms": {...}, "board": {...}}}(月共用、日逐 target)。
     questions = {"day", "total", "by_target": {<target>: {"questions", "clients"}}}:今日題數總計,
     只有計數、不含來源雜湊;帳本打不開時與 budget 一樣回 "unavailable"。
     """
     out: dict[str, object] = {"status": "ok", "backend": _backend()}
-    out["mcp_targets"] = _mcp_targets()
+    out["mcp_targets"] = await _probe_targets()
     if out["backend"] == "anthropic":
         try:
             book = _ledger()

@@ -84,8 +84,8 @@ consumed tokens are still recorded in the ledger as `error` and still count agai
   "status": "ok",
   "backend": "anthropic",
   "mcp_targets": {
-    "cmms":  {"configured": true,  "url": "http://app:8080/mcp"},
-    "board": {"configured": true,  "url": "http://host.docker.internal:18050/mcp"}
+    "cmms":  {"configured": true, "url": "http://app:8080/mcp", "reachable": true},
+    "board": {"configured": true, "url": "http://host.docker.internal:18050/mcp", "reachable": true}
   },
   "budget": {
     "monthly": {"spent_usd": 1.2, "limit_usd": 10.0, "state": "ok"},
@@ -105,7 +105,9 @@ consumed tokens are still recorded in the ledger as `error` and still count agai
 }
 ```
 
-- `mcp_targets.*.configured` is true when the env var is set and non-empty; no network probe.
+- `mcp_targets.*.configured` is true when the env var is set and non-empty.
+  `reachable` is a TCP connect to the URL's host:port only (1 s timeout, probed concurrently); it is
+  not an MCP handshake. It is `null` when the target is not configured.
   `configured`/`url` for cmms reflect `CMMS_MCP_URL` only (the code default
   `https://cmms.example.com/mcp` is used for calls but is not shown here when the env is unset).
 - `state` is `ok`, `warning` (spent >= 80% of limit) or `exhausted` (spent >= limit, or limit <= 0).
@@ -166,6 +168,16 @@ estimated at the most expensive listed price.
   and reads `BOARD_MCP_URL` from the host's `.env` (`BOARD_MCP_URL: ${BOARD_MCP_URL:-}`; unset or
   empty = board target off). Enable with `BOARD_MCP_URL=http://host.docker.internal:18050/mcp`
   and `docker compose up -d hermes`; `/health.mcp_targets.board.configured` turns true.
+- The Oracle Ubuntu image ships with an INPUT policy of REJECT, so the compose network must be
+  allowed to reach docker0:18050 explicitly:
+
+  ```
+  -A INPUT -s 172.18.0.0/16 -d 172.17.0.1/32 -p tcp -m tcp --dport 18050 -m conntrack --ctstate NEW -j ACCEPT
+  ```
+
+  The rule is persisted in `/etc/iptables/rules.v4` (`netfilter-persistent`). It matches the
+  compose subnet, so `docker-compose.public.yml` pins the `default` network to `172.18.0.0/16`;
+  if the network were recreated with another subnet the rule would silently stop matching.
 - Not recommended: `network_mode: host` (hermes would have to bind 0.0.0.0 for the app container
   to reach it).
 
@@ -179,3 +191,4 @@ estimated at the most expensive listed price.
 - 2026-10-31: a question is counted only after an answer or refusal (backend errors no longer
   consume the daily cap); `/health` gained `questions`.
 - 2026-10-31: the board persona is final (`personas/board.md`); `BOARD_MCP_URL` is env-driven in compose.
+- 2026-10-31: compose pins the default network to 172.18.0.0/16 (firewall rule depends on it); /health.mcp_targets.*.reachable added.

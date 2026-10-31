@@ -23,6 +23,7 @@ import datetime as dt
 import importlib.util
 import logging
 import pathlib
+import socket
 import sys
 from types import SimpleNamespace
 
@@ -683,21 +684,34 @@ async def test_chat_passes_extra_headers_to_opener_only_when_given():
 
 def test_health_mcp_targets(anth, monkeypatch):
     client, _ = anth
+    monkeypatch.setattr(gw, "_tcp_reachable", lambda url, timeout=1.0: url == CMMS_URL)
     body = client.get("/health").json()
     assert body["mcp_targets"] == {
-        "cmms": {"configured": False, "url": None},
-        "board": {"configured": False, "url": None},
+        "cmms": {"configured": False, "url": None, "reachable": None},
+        "board": {"configured": False, "url": None, "reachable": None},
     }
     monkeypatch.setenv("CMMS_MCP_URL", CMMS_URL)
     monkeypatch.setenv("BOARD_MCP_URL", BOARD_URL)
     body = client.get("/health").json()
     assert body["mcp_targets"] == {
-        "cmms": {"configured": True, "url": CMMS_URL},
-        "board": {"configured": True, "url": BOARD_URL},
+        "cmms": {"configured": True, "url": CMMS_URL, "reachable": True},
+        "board": {"configured": True, "url": BOARD_URL, "reachable": False},
     }
     monkeypatch.setenv("BOARD_MCP_URL", "")  # 空字串 = 未設定
     assert client.get("/health").json()["mcp_targets"]["board"] == {
-        "configured": False, "url": None}
+        "configured": False, "url": None, "reachable": None}
+
+
+def test_tcp_reachable():
+    with socket.socket() as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        assert gw._tcp_reachable(f"http://127.0.0.1:{port}/mcp") is True
+    # srv 已關閉 → 該埠沒人聽
+    assert gw._tcp_reachable(f"http://127.0.0.1:{port}/mcp") is False
+    assert gw._tcp_reachable("not a url") is False
+    assert gw._tcp_reachable("") is False
 
 
 def test_ledger_upgrades_pre_target_db_in_place(tmp_path):

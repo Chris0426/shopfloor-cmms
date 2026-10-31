@@ -80,3 +80,11 @@ services:
 
 volumes:
   hermes_data:
+
+networks:
+  default:
+    # 固定 compose 網段:host 防火牆放行 172.18.0.0/16 → docker0:18050(board MCP 隧道),
+    # 網路重建若換子網規則就失效(見 infra/hermes/CONTRACT.md §8)。
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
