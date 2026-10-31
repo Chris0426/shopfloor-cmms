@@ -284,7 +284,14 @@ async def list_work_orders(
     assigned_vendor: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """列工單(新到舊),可依設備 / 類型 / 狀態 / 承包商過濾。"""
+    """列工單(新到舊),可依設備 / 類型 / 狀態 / 承包商過濾。
+
+    status 不分大小寫(內部轉大寫);空白視為不過濾。可用值:OPEN / IN_PROGRESS /
+    ON_HOLD / COMPLETED / CLOSED / CANCELLED / VOIDED(後三者為終態)。
+    work_type 為原系統代碼(如 REACTIVE、PM),照原樣精確比對。
+    """
+    # 工具邊界正規化:DB 狀態碼是大寫,LLM 常傳小寫;service 層保持精確比對、不改
+    status = (status or "").strip().upper() or None
     async with get_sessionmaker()() as session:
         wos = await WorkOrderService(session).list_work_orders(
             asset_id=asset_id,
