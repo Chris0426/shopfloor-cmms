@@ -464,7 +464,9 @@ mark.armed {
   /* 不渲染助理 dock(CMMS_UI_HIDE_ASSISTANT=1):兩欄,主欄寬度同有 dock 時 */
   .shell--nodock { grid-template-columns: 220px minmax(0, 1fr); max-width: 1100px; }
   .sidebar {
-    position: sticky; top: 0; height: 100vh;
+    position: sticky; top: var(--demo-banner-h, 0px);   /* 同 dock:扣掉示範橫幅,左欄底部的使用者列才不會被擠出視窗 */
+    height: calc(100vh - var(--demo-banner-h, 0px));
+    height: calc(100dvh - var(--demo-banner-h, 0px));
     display: flex; flex-direction: column; padding: 18px 12px;
     background: var(--paper-head); border-right: 1px solid var(--line);
   }
@@ -474,7 +476,9 @@ mark.armed {
   .tabbar, .bookmark { display: none; }
   .page { padding-bottom: 24px; }
   .dock {
-    position: sticky; top: 0; height: 100vh; z-index: 2;
+    position: sticky; top: var(--demo-banner-h, 0px); z-index: 2;
+    height: calc(100vh - var(--demo-banner-h, 0px));
+    height: calc(100dvh - var(--demo-banner-h, 0px));      /* 舊瀏覽器沒有 dvh 就落回上一行的 vh */
     transform: none; visibility: visible; transition: none;
     border-top: 0; border-left: 1px solid var(--paper-2-line);
     box-shadow: -3px 0 9px var(--paper-2-shadow);
@@ -504,6 +508,15 @@ svg.icon-xs { width: 12px; height: 12px; flex: 0 0 auto; }
   position: sticky; top: 0; z-index: 50; width: 100%;
   background: var(--primary); color: var(--primary-ink);
   padding: 6px 12px; font-size: 12px; font-weight: 500; letter-spacing: .01em; text-align: center;
+}
+/* 桌面:dock 是 sticky + 100vh,必須扣掉橫幅高度,否則輸入框底部被擠出視窗。
+   橫幅鎖成固定高度(單行、超出省略),--demo-banner-h 才與實際高度一致,純 CSS 不必量測。 */
+@media (min-width: 900px) {
+  body:has(.demo-banner) { --demo-banner-h: 40px; }
+  .demo-banner {
+    box-sizing: border-box; height: var(--demo-banner-h, 40px);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 }
 
 /* 按鈕補兩種:危險(描邊紅, 紅只給擋下 / 危險)與整列寬 */
