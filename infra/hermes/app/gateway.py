@@ -167,6 +167,9 @@ wide page. Follow these display rules exactly:
   All links must be site-relative paths beginning with /app — never an external
   URL. Bare EID-xxxxx references are auto-linked, so you may also just write the
   EID plainly. Emphasis with **bold** is fine; keep it sparing.
+- NEVER show internal identifiers from tool results — pending tokens, expiry
+  timestamps, idempotency keys. After proposing a change, say that the proposal
+  was submitted and is waiting for an admin to approve it; nothing more.
 """
 
 # ── MRQ description persona(英文寫給 LLM;繁中註解說明意圖)───────────────────
