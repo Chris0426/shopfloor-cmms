@@ -225,3 +225,64 @@ async def test_stepwise_forward_replay_and_idempotency(session) -> None:
     # 倒退 → 拒(只往後)
     with pytest.raises(story.StoryError, match="until_regressed"):
         await story.replay_story(session, _t(10, 1, 14, 59))
+
+
+# ---------------------------------------------------------------- 劇本外寫入(story_diverged)
+
+
+def _state_after(wo: int, n: int):
+    """重放前 n 個事件後,DB 應有的 (history, notes)。"""
+    hist, notes = [], []
+    for e in story.events_for(wo)[:n]:
+        if e.is_note:
+            notes.append((e.note_key(), e.text, e.at))
+        else:
+            hist.append((story.STATUS_OF_KIND[e.kind], e.at))
+    return hist, notes
+
+
+def test_every_story_prefix_is_not_divergent() -> None:
+    for wo in story.STORY_WOS:
+        evs = story.events_for(wo)
+        for n in range(len(evs) + 1):
+            assert story.find_divergence(evs, *_state_after(wo, n)) is None
+    # 中斷:轉移落地、同刻日誌未落地 → 仍是前綴
+    b = story.events_for(96321)
+    hist, notes = _state_after(96321, 3)  # open, report note, start(15:21 note 未落地)
+    assert story.find_divergence(b, hist, notes) is None
+
+
+def test_status_change_outside_the_story_is_divergent() -> None:
+    b = story.events_for(96321)
+    hist, notes = _state_after(96321, len(b))
+    now = _t(11, 1, 9, 0)
+    msg = story.find_divergence(b, [*hist, ("CLOSED", now)], notes)
+    assert msg is not None and "CLOSED" in msg
+    # 同狀態、不同時刻(例如訪客在「現在」開工)也算
+    hist3, notes3 = _state_after(96321, 2)
+    assert story.find_divergence(b, [*hist3, ("IN_PROGRESS", now)], notes3) is not None
+
+
+def test_foreign_edited_or_deleted_note_is_divergent() -> None:
+    b = story.events_for(96321)
+    hist, notes = _state_after(96321, len(b))
+    now = _t(11, 1, 9, 0)
+    assert story.find_divergence(b, hist, [*notes, (None, "visitor", now)]) is not None
+    key, _, at = notes[1]
+    edited = [notes[0], (key, "changed", at), *notes[2:]]
+    assert "edited" in story.find_divergence(b, hist, edited)
+    assert "missing" in story.find_divergence(b, hist, [notes[0], *notes[2:]])
+
+
+async def test_change_outside_the_story_is_refused_not_silently_kept(session) -> None:
+    """訪客 / agent 把 WO-96321 結案後,未清庫重跑 seed → story_diverged,而非 exit 0 留在 CLOSED。"""
+    from cmms.audit import Actor
+    from cmms.domain.work_order.service import WorkOrderService
+
+    await story.replay_story(session, None)
+    await WorkOrderService(session).close_work_order(96321, Actor.human("admin"))
+    with pytest.raises(story.StoryError, match="story_diverged: WO 96321"):
+        await story.replay_story(session, None)
+    # 較早的 --until 也報 diverged(而非誤導的 until_regressed)
+    with pytest.raises(story.StoryError, match="story_diverged"):
+        await story.replay_story(session, _t(10, 1, 15, 22))

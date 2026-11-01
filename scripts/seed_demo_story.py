@@ -22,6 +22,13 @@ replayed. So one database can be stepped `--until 14:59` -> `--until 15:22` -> f
 and re-running the same `--until` writes nothing. An `--until` earlier than what is
 already in the database is an error (there is no rewind).
 
+A story work order that was changed outside the story (a visitor or an agent closed,
+held or annotated WO-96321, then the seed re-ran without a database wipe) is an error
+too (`story_diverged`), not a silent no-op: its high-water mark is "now", so nothing
+would be replayed and the story would quietly stay in the wrong state. There is no
+domain operation that deletes or rewinds a work order, so the only way back is a fresh
+database (scripts/demo_reset.sh, or `docker compose down -v` and seed again).
+
 Prints a one-line JSON summary last; exits non-zero on any failure.
 Database: CMMS_DATABASE_URL (same as every other script).
 """
@@ -180,13 +187,77 @@ def count_beyond(events: Sequence[StoryEvent], until: datetime | None) -> int:
     return 0 if until is None else sum(1 for e in events if e.at > until)
 
 
+# 狀態事件 → 它在 status_history 落下的 to_status(open 開單 = OPEN)。
+STATUS_OF_KIND = {
+    "open": "OPEN",
+    "start": "IN_PROGRESS",
+    "complete": "COMPLETED",
+    "close": "CLOSED",
+}
+
+
+def find_divergence(
+    events: Sequence[StoryEvent],
+    history: Sequence[tuple[str, datetime]],
+    notes: Sequence[tuple[str | None, str, datetime]],
+) -> str | None:
+    """既有工單是否仍是劇本的「前綴」。是 → None;否 → 第一個不符處的說明。
+
+    `history` = status_history 的 (to_status, changed_at),依時間;`notes` = 未刪日誌的
+    (idempotency_key, body, occurred_at)。前綴的定義:
+      ① 狀態歷程逐筆等於劇本狀態事件的前 n 筆(多出任何轉移 = 劇本外寫入);
+      ② 每筆日誌都是劇本日誌(冪等鍵相符)且內文、時刻未被改;
+      ③ high-water 之前的劇本日誌都還在(與 high-water 同刻者可缺 = 中斷重跑,見 select_pending)。
+    """
+    expected = [(STATUS_OF_KIND[e.kind], e.at) for e in events if not e.is_note]
+    got = list(history)
+    if got != expected[: len(got)]:
+        i = next(i for i, h in enumerate(got) if i >= len(expected) or h != expected[i])
+        extra = got[i]
+        return (
+            f"status change {extra[0]} at {extra[1].astimezone(TPE).isoformat()} "
+            "is not part of the story"
+        )
+    story_notes = {e.note_key(): e for e in events if e.is_note}
+    for key, body, at in notes:
+        ev = story_notes.get(key) if key else None
+        if ev is None:
+            return f"note at {at.astimezone(TPE).isoformat()} is not part of the story"
+        if body != ev.text or at != ev.at:
+            return f"story note {key} was edited"
+    stamps = [at for _, at in got] + [at for _, _, at in notes]
+    if stamps:
+        t_max = max(stamps)
+        present = {key for key, _, _ in notes}
+        for key, ev in story_notes.items():
+            if ev.at < t_max and key not in present:
+                return f"story note {key} is missing (deleted?)"
+    return None
+
+
 # ---------------------------------------------------------------- DB 套用
 
 
-async def _high_water(svc, wo_no: int) -> tuple[datetime | None, frozenset[str]]:
-    """工單既有狀態的最大時間(status_history.changed_at ∪ note.occurred_at)與已落地日誌鍵。"""
+async def _high_water(
+    svc, wo_no: int, events: Sequence[StoryEvent]
+) -> tuple[datetime | None, frozenset[str]]:
+    """工單既有狀態的最大時間(status_history.changed_at ∪ note.occurred_at)與已落地日誌鍵。
+
+    先驗既有狀態仍是劇本前綴(find_divergence);被劇本外寫入改過 → StoryError。
+    """
     hist = await svc.get_status_history(wo_no)
     notes = await svc.list_notes(wo_no)
+    diverged = find_divergence(
+        events,
+        [(h.to_status, h.changed_at) for h in hist],
+        [(n.idempotency_key, n.body, n.occurred_at) for n in notes],
+    )
+    if diverged is not None:
+        raise StoryError(
+            f"story_diverged: WO {wo_no}: {diverged}. The story is forward-only and no "
+            "domain operation rewinds a work order; reset the demo database "
+            "(scripts/demo_reset.sh, or `docker compose down -v`) and seed again"
+        )
     stamps = [h.changed_at for h in hist] + [n.occurred_at for n in notes]
     keys = frozenset(n.idempotency_key for n in notes if n.idempotency_key)
     return (max(stamps) if stamps else None), keys
@@ -244,7 +315,7 @@ async def replay_story(session, until: datetime | None) -> dict:
                     f"work order {wo_no} already exists on {existing.asset_id}, "
                     f"not on {STORY_ASSET}; refusing to write the story over it"
                 )
-            t_max, done = await _high_water(svc, wo_no)
+            t_max, done = await _high_water(svc, wo_no, evs)
             if until is not None and t_max is not None and until < t_max:
                 raise StoryError(
                     f"until_regressed: WO {wo_no} already has state up to "
