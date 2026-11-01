@@ -418,8 +418,8 @@ async def propose_close_work_order(
     """提案結案工單(ADR-016)。回 pending_token + dry-run diff;需人類 confirm 才執行。
 
     `confirmed_reason_code`(D6,選填):人工確認的故障真因碼,**efc 軸**
-    (equipment_failure_code)、**僅 REACTIVE 工單有意義**(PM 發現故障應另開報修)。confirm
-    時才驗(存在 + is_active + REACTIVE);None → 不設。
+    (equipment_failure_code)、**僅 REACTIVE 工單有意義**(PM 發現故障應另開報修)。propose
+    時即驗(存在 + is_active + REACTIVE,不合 → 錯誤、不建提案),confirm 時再驗;None → 不設。
     """
     from cmms.audit import Actor
 
@@ -472,7 +472,8 @@ async def propose_update_item(
     (非 HTTP 直呼)→ 拒(update_item 屬 HUMAN_PROPOSABLE_OPS,提案人必為已驗證 human)。
 
     未指定的欄位沿用現值(比照 web 表單「預填現值」語意)→ dry-run diff 只列真正的改動,
-    避免 agent 漏填某欄反而把主檔清空。未知 item_code → 拒。
+    避免 agent 漏填某欄反而把主檔清空。未知 item_code → 拒;數值欄非數字 / 負數 / 超出欄型、
+    supplier_org_id 非既存 org → 拒(與直接編輯同規則),不建提案。
     """
     from cmms.audit import Actor
     from cmms.domain.identity.service import mcp_transport_identity

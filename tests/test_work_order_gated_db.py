@@ -862,3 +862,102 @@ async def test_propose_confirm_close_with_confirmed_reason(session) -> None:
         pending_token=p.pending_token, confirmer=admin, at=_ts(12)
     )
     assert closed.status == "CLOSED" and closed.confirmed_reason_code == "eqfHeadCrash"
+
+
+# ---- propose 端壞值驗證:拋 WorkOrderError、不建提案列 ----
+
+
+async def _proposal_count(session) -> int:
+    from sqlalchemy import func, select
+
+    from cmms.domain.work_order.models import PendingProposal
+
+    return await session.scalar(select(func.count()).select_from(PendingProposal))
+
+
+@pytest.mark.parametrize(
+    ("over", "match"),
+    [
+        ({"reorder_point": "-1"}, "reorder_point cannot be negative"),
+        ({"reorder_quantity": "-0.001"}, "reorder_quantity cannot be negative"),
+        ({"lead_time_weeks": "-2"}, "lead_time_weeks cannot be negative"),
+        ({"unit_cost": "-3.5"}, "unit_cost cannot be negative"),
+        ({"unit_cost": "1e12"}, "unit_cost out of range"),
+        ({"lead_time_weeks": "3000000000"}, "lead_time_weeks out of range"),
+        ({"reorder_point": "NaN"}, "must be a finite number"),
+        ({"reorder_point": "abc"}, "invalid item field value"),
+        ({"supplier_org_id": "no-such-org"}, "organization no-such-org not found"),
+    ],
+)
+async def test_propose_update_item_bad_value_rejected(session, over, match) -> None:
+    """品項修改提案帶壞值(直接編輯路徑會拒的值)→ propose 即拒,不建提案列。"""
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    await _seed_item(session, alice)
+    before = await _proposal_count(session)
+    with pytest.raises(WorkOrderError, match=match):
+        await svc.propose(
+            operation="update_item", params=_item_params(**over),
+            proposed_by=Actor.human("eng1"), at=_ts(10),
+        )
+    assert await _proposal_count(session) == before
+
+
+async def test_propose_update_item_boundary_values_accepted(session) -> None:
+    """不誤擋:0、欄型上限內的值、既存 supplier_org_id 照常建提案。"""
+    from decimal import Decimal
+
+    from cmms.domain.contacts.service import ContactsService
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    org = await ContactsService(session).create_organization(actor=alice, name="Acme Seals")
+    await _seed_item(session, alice)
+    p = await svc.propose(
+        operation="update_item",
+        params=_item_params(
+            reorder_point="0", reorder_quantity="999999999.999", lead_time_weeks="0",
+            unit_cost="999999999.99999", supplier_org_id=org.org_id,
+        ),
+        proposed_by=Actor.human("eng1"), at=_ts(10),
+    )
+    assert p.status == "PENDING"
+    item = await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert item.unit_cost == Decimal("999999999.99999") and item.supplier_org_id == org.org_id
+
+
+async def test_propose_open_unknown_work_type_rejected(session) -> None:
+    """open 提案的 work_type 不在 work_type 表(FK)→ propose 即拒,不建提案列。"""
+    svc = WorkOrderService(session)
+    before = await _proposal_count(session)
+    for wt in ("NOPE", ""):
+        with pytest.raises(WorkOrderError, match="unknown work_type"):
+            await svc.propose(
+                operation="open_work_order",
+                params={"asset_id": "EID-001", "work_type": wt},
+                proposed_by=Actor.agent("analytics"), at=_ts(10),
+            )
+    assert await _proposal_count(session) == before
+
+
+async def test_propose_close_bad_confirmed_reason_rejected(session) -> None:
+    """close 提案的真因碼不存在 / 已退役 → propose 即拒(同直接結案的驗證),不建提案列。"""
+    from cmms.domain.failure_vocab.models import EquipmentFailureCode
+
+    svc = WorkOrderService(session)
+    admin = await _seed_admin(session)
+    session.add(EquipmentFailureCode(code="eqfOld", is_active=False))
+    await session.flush()
+    wo = await svc.open_work_order(asset_id="EID-001", work_type="REACTIVE", actor=admin, at=_ts(9))
+    no = wo.work_order_no
+    await svc.start_work(no, admin, at=_ts(10))
+    await svc.complete_work(no, admin, at=_ts(11))
+    before = await _proposal_count(session)
+    for code, match in (("eqfNope", "unknown equipment failure code"), ("eqfOld", "retired")):
+        with pytest.raises(WorkOrderError, match=match):
+            await svc.propose(
+                operation="close_work_order",
+                params={"work_order_no": no, "confirmed_reason_code": code},
+                proposed_by=Actor.agent("analytics"), at=_ts(11, 30),
+            )
+    assert await _proposal_count(session) == before

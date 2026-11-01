@@ -436,6 +436,51 @@ def test_mcp_propose_update_item(db_ctx):
     assert p.dry_run_diff["changes"]["bin_location"] == {"from": "A1", "to": "B2"}
 
 
+def test_mcp_propose_update_item_bad_value_rejected(db_ctx):
+    """propose_update_item 帶負數 / 超出欄型的數值 → 工具回錯(isError),不建提案列。"""
+    client, _token, sm = db_ctx
+    from cmms.domain.inventory.loader import load as load_inv
+    from cmms.domain.work_order.models import PendingProposal
+
+    inv_row = {
+        "item": "MCPITEM2", "asset_sub": "", "sf_desc": "Valve", "vpartno": "",
+        "descrip": "", "location": "", "orderpt": "", "onhand": "",
+        "cost": "", "lead_time": "", "obsol": "F", "stock": "T", "supplier": "",
+        "weblink": "", "photo": "", "parnt_item": "", "child_item": "", "alt_item": "",
+        "comment": "",
+    }
+
+    async def _seed() -> str:
+        async with sm() as s:
+            await load_inv([inv_row], s)
+            tok, _ = await IdentityService(s).mint_scoped_token_for_user(
+                username="bob", agent="codex", scope="pilot"
+            )
+            return tok
+
+    token = asyncio.run(_seed())
+    for args in ({"reorder_point": "-1"}, {"unit_cost": "1e12"}):
+        r = client.post(
+            "/mcp",
+            json=_call("propose_update_item", {"item_code": "MCPITEM2", **args}),
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert '"isError":true' in r.text
+        assert "invalid item field value" in r.text
+
+    async def _count() -> int:
+        async with sm() as s:
+            rows = (
+                await s.scalars(
+                    select(PendingProposal).where(PendingProposal.operation == "update_item")
+                )
+            ).all()
+            return sum(1 for p in rows if p.params.get("item_code") == "MCPITEM2")
+
+    assert asyncio.run(_count()) == 0
+
+
 def test_mcp_forward_work_orders_dry_run(db_ctx, monkeypatch):
     """forward_work_orders_to_mrq:dry_run 預設 true → 零寫入預覽;acting_user = transport 身分。"""
     from cryptography.fernet import Fernet

@@ -52,6 +52,7 @@ from cmms.domain.work_order.models import (
     WorkOrderNote,
     WorkOrderPart,
     WorkOrderStatusHistory,
+    WorkType,
     WoStatus,
 )
 from cmms.domain.work_order.onbox import KeyResolver, OnboxVerificationError, verify_onbox_jws
@@ -2267,6 +2268,10 @@ class WorkOrderService(DomainService):
         review f14cf8d 加固:① TTL 預設依 proposer 身分決定(human 7 天等 admin 排審、
         agent 1h),不再靠呼叫端記得傳 ② `void_work_order` 提案先驗「該單目前可作廢」
         (不收註定 confirm 不了的提案)+ 同單同操作已有 PENDING → 回既有(防重複請求)。
+
+        壞值在提案端就擋(拋 WorkOrderError,不建提案列、不寫審計),規則一律沿用直接寫入路徑 /
+        DB 欄型既有的守門:update_item 數值欄(`_validate_item_proposal_values`)、open 的
+        work_type(FK)、close 的真因碼(`_validate_confirmed_reason` + 僅 REACTIVE)。
         """
         # operator 閘:提案(請求作廢 / 品項修改提案)非 operator 職責;agent proposer
         # (Profile A)非 operator,不受影響。
@@ -2304,11 +2309,20 @@ class WorkOrderService(DomainService):
                 raise InvalidTransition(
                     f"wo {wo_no}: {wo.status} -> CLOSED not allowed (close requires COMPLETED)"
                 )
+            # 真因碼走直接結案同一驗證(存在 + is_active、僅 REACTIVE),壞值提案端就擋
+            reason = await self._validate_confirmed_reason(params.get("confirmed_reason_code"))
+            self._assert_reason_applicable(wo, reason)
+        if operation == "open_work_order":
+            # work_type 為 FK(work_type.code):表裡沒有的代碼 confirm 時必撞 FK → 提案端就擋。
+            # 設備存在 / 在冊屬可變前提,留給 confirm 重驗(`_proposal_stale`)。
+            work_type = params.get("work_type")
+            if not work_type or await self.session.get(WorkType, work_type) is None:
+                raise WorkOrderError(f"unknown work_type: {work_type!r}")
         if operation == "update_item":
             item_code = params.get("item_code")
             if not item_code or await self.session.get(InventoryItem, item_code) is None:
                 raise WorkOrderError(f"inventory_item {item_code} not found")
-            self._coerce_item_params(params)  # 數字欄位先驗(壞輸入在提案端就擋)
+            await self._validate_item_proposal_values(params)  # 壞值提案端就擋,不建提案列
             existing_pending = await self.find_pending_proposal(
                 operation=operation, item_code=item_code, at=now
             )
@@ -2554,6 +2568,24 @@ class WorkOrderService(DomainService):
                 proposal.status = "REJECTED"
                 proposal.confirmed_by = by.value
                 proposal.resolved_at = at or self._now()
+
+    async def _validate_item_proposal_values(self, params: dict) -> None:
+        """update_item 提案的值驗證(propose 端;沿用直接編輯路徑的同一套守門,不另訂規則):
+        數字可解析(`_coerce_item_params`)、有限 / 放得進 DB 欄型 / 不得為負
+        (`InventoryService._validate_item_numbers`)、supplier_org_id 為既存 org
+        (`_clean_supplier_org`)。儲位 / supplier 文字屬可變前提,留給 confirm 重驗。"""
+        coerced = self._coerce_item_params(params)
+        inv = InventoryService(self.session)
+        try:
+            inv._validate_item_numbers(
+                reorder_point=coerced["reorder_point"],
+                reorder_quantity=coerced["reorder_quantity"],
+                lead_time_weeks=coerced["lead_time_weeks"],
+                unit_cost=coerced["unit_cost"],
+            )
+            await inv._clean_supplier_org(coerced["supplier_org_id"])
+        except InventoryError as e:
+            raise WorkOrderError(f"invalid item field value: {e}") from e
 
     @staticmethod
     def _coerce_item_params(params: dict) -> dict:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -431,6 +431,47 @@ class InventoryService(DomainService):
         if value is not None and value < 0:
             raise InventoryError(f"{field} cannot be negative: {value}")
 
+    @staticmethod
+    def _fits_item_column(field: str, value: Decimal | int | None) -> None:
+        """數值是否放得進 inventory_item 該欄的 DB 欄型(以 models 的欄型為準,不另訂上限):
+        Numeric(p, s) → 有限值、依 s 位四捨五入後整數位 < p−s(PG 超出即 numeric field overflow,
+        且受限 numeric 不收 NaN / Infinity);Integer → int4 範圍。放不進 → InventoryError。"""
+        if value is None:
+            return
+        col_type = InventoryItem.__table__.c[field].type
+        if isinstance(value, Decimal):
+            if not value.is_finite():
+                raise InventoryError(f"{field} must be a finite number: {value}")
+            p, s = col_type.precision, col_type.scale
+            limit = Decimal(10) ** (p - s)
+            # PG 先依 scale 四捨五入(遠離零)再檢查整數位
+            if abs(value) >= limit or abs(
+                value.quantize(Decimal(1).scaleb(-s), rounding=ROUND_HALF_UP)
+            ) >= limit:
+                raise InventoryError(f"{field} out of range for numeric({p},{s}): {value}")
+        elif not -(2**31) <= value <= 2**31 - 1:
+            raise InventoryError(f"{field} out of range for integer: {value}")
+
+    @classmethod
+    def _validate_item_numbers(
+        cls,
+        *,
+        reorder_point: Decimal | None,
+        reorder_quantity: Decimal | None,
+        lead_time_weeks: int | None,
+        unit_cost: Decimal | None,
+    ) -> None:
+        """主檔數值欄的寫入守門(建立 / 編輯 / 編輯提案 propose 共用同一份規則):
+        有限且放得進 DB 欄型(`_fits_item_column`)、不得為負(`_non_negative`)。"""
+        for field, value in (
+            ("reorder_point", reorder_point),
+            ("reorder_quantity", reorder_quantity),
+            ("lead_time_weeks", lead_time_weeks),
+            ("unit_cost", unit_cost),
+        ):
+            cls._fits_item_column(field, value)
+            cls._non_negative(field, value)
+
     async def create_item(
         self,
         item_code: str,
@@ -481,14 +522,14 @@ class InventoryService(DomainService):
         clean_name = (name or "").strip()
         if not clean_name:
             raise InventoryError("item name cannot be empty")
-        self._non_negative("reorder_point", reorder_point)
-        self._non_negative("reorder_quantity", reorder_quantity)
-        self._non_negative("lead_time_weeks", lead_time_weeks)
-        self._non_negative("unit_cost", unit_cost)
+        self._validate_item_numbers(
+            reorder_point=reorder_point,
+            reorder_quantity=reorder_quantity,
+            lead_time_weeks=lead_time_weeks,
+            unit_cost=unit_cost,
+        )
 
-        new_org = (supplier_org_id or "").strip() or None
-        if new_org is not None and await self.session.get(Organization, new_org) is None:
-            raise InventoryError(f"organization {new_org} not found")
+        new_org = await self._clean_supplier_org(supplier_org_id)
         clean_supplier = (supplier or "").strip() or None
         if clean_supplier is not None and not await self._supplier_value_known(clean_supplier):
             raise InventoryError(
@@ -595,15 +636,15 @@ class InventoryService(DomainService):
         item = await self.session.get(InventoryItem, item_code)
         if item is None:
             raise InventoryError(f"inventory_item {item_code} not found")
-        self._non_negative("reorder_point", reorder_point)
-        self._non_negative("reorder_quantity", reorder_quantity)
-        self._non_negative("lead_time_weeks", lead_time_weeks)
-        self._non_negative("unit_cost", unit_cost)
+        self._validate_item_numbers(
+            reorder_point=reorder_point,
+            reorder_quantity=reorder_quantity,
+            lead_time_weeks=lead_time_weeks,
+            unit_cost=unit_cost,
+        )
         new_org: str | None | object = supplier_org_id
         if new_org is not _UNSET and new_org is not None:
-            new_org = str(new_org).strip() or None
-            if new_org is not None and await self.session.get(Organization, new_org) is None:
-                raise InventoryError(f"organization {new_org} not found")
+            new_org = await self._clean_supplier_org(str(new_org))
         # 供應商欄限現有值(#7b):給定的 supplier 文字必須對得上既存 organization.name,或已是
         # 既存的 supplier 文字值(涵蓋 legacy 未連 org 的名稱、以及品項本身現值)。查無 → 拒。
         if supplier is not None and not await self._supplier_value_known(supplier):
@@ -686,6 +727,14 @@ class InventoryService(DomainService):
             item.supplier_org_id = org_id
             item.updated_by = actor.value
             item.source_actor = actor.value
+
+    async def _clean_supplier_org(self, value: str | None) -> str | None:
+        """`supplier_org_id`(RFQ 收件 org,FK organization.org_id)寫入守門:strip 後空 → None
+        (= 清除連結);有值須為既存 org,否則 InventoryError。建立 / 編輯 / 編輯提案 propose 共用。"""
+        org_id = (value or "").strip() or None
+        if org_id is not None and await self.session.get(Organization, org_id) is None:
+            raise InventoryError(f"organization {org_id} not found")
+        return org_id
 
     async def _lock_item_references(
         self, *, bin_location: str | None, supplier: str | None, current_bin: str | None
