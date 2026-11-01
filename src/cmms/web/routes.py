@@ -81,6 +81,7 @@ from cmms.domain.telegram_bridge.service import (
 from cmms.domain.work_order.service import (
     ALLOWED_TRANSITIONS,
     BACKFILL_ACTOR,
+    STALE_REASONS,
     TERMINAL_STATUSES,
     WorkOrderError,
     WorkOrderService,
@@ -99,6 +100,7 @@ from cmms.web.export import (
 )
 from cmms.web.help_docs import HELP_DOCS, get_help_doc
 from cmms.web.i18n import (
+    CATALOG,
     DEFAULT_LOCALE,
     LOCALE_LABELS,
     SUPPORTED_LOCALES,
@@ -3246,11 +3248,44 @@ async def my_proposals(
     )
     proposals, has_next = _paginate(rows, _PER_PAGE)
     pager_base = _pager_base("/app/proposals", {})
+    now = datetime.now(UTC)
+    expiry_notes = {
+        p.pending_token: note
+        for p in proposals
+        if (note := _proposal_expiry_note(p, now, user.ui_locale)) is not None
+    }
     return _render(
         request, "proposals.html", user.ui_locale, active="",
-        user=user, proposals=proposals, now=datetime.now(UTC),
+        user=user, proposals=proposals, now=now, expiry_notes=expiry_notes,
         page=page, has_next=has_next, pager_base=pager_base, back_url="/app/settings",
     )
+
+
+def _proposal_expiry_note(p, now: datetime, locale: str) -> str | None:
+    """「我的提案」逾期原因說明(非逾期 → None)。
+
+    - EXPIRED 且 `confirmed_by` 有值 = admin 嘗試核准時前提已不成立(confirm 重驗失敗)→ 依
+      `dry_run_diff["stale"].reason` 顯示具體原因(工單現況 / 設備代碼);無記錄(舊資料)→
+      通用「核准前已變更」句。
+    - 其餘(confirmed_by 為 NULL 的 EXPIRED、或 PENDING 已過 expires_at)= 未在期限內審核。
+    """
+    if p.status == "EXPIRED" and p.confirmed_by:
+        stale = (p.dry_run_diff or {}).get("stale")
+        reason = stale.get("reason") if isinstance(stale, dict) else None
+        if reason not in STALE_REASONS:
+            return translate("myprop.expired.stale", locale)
+        text = translate(f"myprop.expired.{reason}", locale)
+        if reason == "wo_status":
+            cs = stale.get("current_status")
+            if cs and f"status.{cs}" in CATALOG[DEFAULT_LOCALE]:
+                now_label = translate("myprop.expired.now", locale)
+                text += f" ({now_label} {translate(f'status.{cs}', locale)})"
+        elif reason.startswith("asset_") and stale.get("subject"):
+            text = f"{stale['subject']}: {text}"
+        return text
+    if p.status == "EXPIRED" or (p.status == "PENDING" and p.expires_at <= now):
+        return translate("myprop.expired.ttl", locale)
+    return None
 
 
 @router.post("/settings/pat", response_model=None)

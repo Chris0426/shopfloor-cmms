@@ -43,6 +43,11 @@
     <p class="form-hint">
       {% if eff == 'PENDING' %}
       {{ t("myprop.expires") }} {{ p.expires_at|local_dt("%m/%d %H:%M") }}
+      {% elif eff == 'EXPIRED' and expiry_notes.get(p.pending_token) %}
+      {#- 逾期原因(route `_proposal_expiry_note`):未在期限內審核 vs 核准前前提已變更(confirmed_by 有值) -#}
+      <span class="prop-expiry">{{ expiry_notes[p.pending_token] }}</span>
+      {% if p.status == 'EXPIRED' and p.confirmed_by %} · {{ t("myprop.reviewed_by") }} <span class="mono">{{ p.confirmed_by.split(":")[-1] }}</span>{% endif %}
+      {% if p.resolved_at %} · {{ p.resolved_at|local_dt("%m/%d %H:%M") }}{% endif %}
       {% elif p.status in ('CONFIRMED', 'REJECTED') and p.confirmed_by %}
       {#- confirmed_by = 裁決者;model 無獨立駁回理由欄,不捏造 -#}
       {{ t("myprop.reviewed_by") }} <span class="mono">{{ p.confirmed_by.split(":")[-1] }}</span>

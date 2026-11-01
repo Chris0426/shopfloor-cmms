@@ -344,6 +344,24 @@ CATALOG: dict[str, dict[str, str]] = {
         "myprop.status.CONFIRMED": "Approved",
         "myprop.status.REJECTED": "Rejected",
         "myprop.status.EXPIRED": "Expired",
+        "myprop.expired.ttl": "Not reviewed before the deadline — no change was made.",
+        "myprop.expired.stale": (
+            "Not applied: the work order, asset or item changed before approval."
+        ),
+        "myprop.expired.now": "now:",
+        "myprop.expired.wo_status": "Not applied: the work order status changed before approval",
+        "myprop.expired.asset_missing": "Not applied: the asset is not in the equipment master.",
+        "myprop.expired.asset_retired": "Not applied: the asset was retired before approval.",
+        "myprop.expired.item_missing": (
+            "Not applied: the item is no longer in the inventory master."
+        ),
+        "myprop.expired.bin_unavailable": (
+            "Not applied: the proposed storage location was deactivated before approval."
+        ),
+        "myprop.expired.supplier_unknown": (
+            "Not applied: the proposed supplier no longer matches a known supplier"
+            " (it may have been renamed)."
+        ),
         "report.scan": "Scan barcode",
         "eq.parts": "Parts used",
         "eq.parts_direct": "Direct issue",
@@ -1412,6 +1430,15 @@ CATALOG: dict[str, dict[str, str]] = {
         "myprop.status.CONFIRMED": "已核准",
         "myprop.status.REJECTED": "已駁回",
         "myprop.status.EXPIRED": "已逾期",
+        "myprop.expired.ttl": "未在期限內審核,未執行任何變更。",
+        "myprop.expired.stale": "未執行:核准前工單 / 設備 / 品項已變更。",
+        "myprop.expired.now": "目前:",
+        "myprop.expired.wo_status": "未執行:核准前工單狀態已變更",
+        "myprop.expired.asset_missing": "未執行:設備不在設備主檔中。",
+        "myprop.expired.asset_retired": "未執行:核准前設備已退役。",
+        "myprop.expired.item_missing": "未執行:品項已不在品項主檔中。",
+        "myprop.expired.bin_unavailable": "未執行:核准前提案中的儲位已停用。",
+        "myprop.expired.supplier_unknown": "未執行:提案中的供應商已對不上既有供應商(可能已更名)。",
         "report.scan": "掃描條碼",
         "eq.parts": "用料紀錄",
         "eq.parts_direct": "直領",
@@ -2384,6 +2411,30 @@ CATALOG: dict[str, dict[str, str]] = {
         "myprop.status.CONFIRMED": "Đã duyệt",
         "myprop.status.REJECTED": "Bị từ chối",
         "myprop.status.EXPIRED": "Hết hạn",
+        "myprop.expired.ttl": "Không được duyệt trước hạn — không có thay đổi nào được thực hiện.",
+        "myprop.expired.stale": (
+            "Không thực hiện: đơn công việc, thiết bị hoặc vật tư đã thay đổi trước khi được duyệt."
+        ),
+        "myprop.expired.now": "hiện tại:",
+        "myprop.expired.wo_status": (
+            "Không thực hiện: trạng thái đơn công việc đã thay đổi trước khi được duyệt"
+        ),
+        "myprop.expired.asset_missing": (
+            "Không thực hiện: thiết bị không có trong danh mục thiết bị."
+        ),
+        "myprop.expired.asset_retired": (
+            "Không thực hiện: thiết bị đã ngừng sử dụng trước khi được duyệt."
+        ),
+        "myprop.expired.item_missing": (
+            "Không thực hiện: vật tư không còn trong danh mục vật tư."
+        ),
+        "myprop.expired.bin_unavailable": (
+            "Không thực hiện: vị trí lưu kho được đề xuất đã bị ngừng sử dụng trước khi được duyệt."
+        ),
+        "myprop.expired.supplier_unknown": (
+            "Không thực hiện: nhà cung cấp được đề xuất không còn khớp với nhà cung cấp nào"
+            " (có thể đã đổi tên)."
+        ),
         "report.scan": "Quét mã vạch",
         "eq.parts": "Linh kiện đã dùng",
         "eq.parts_direct": "Xuất trực tiếp",

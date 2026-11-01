@@ -4796,6 +4796,82 @@ def test_my_proposals_empty(as_user, monkeypatch):
     assert "submitted any proposals." in r.text  # 撇號經 Jinja 轉義,比對無撇號子字串
 
 
+
+def test_my_proposals_expired_reason(as_user, monkeypatch):
+    """逾期提案區分原因:confirmed_by 為 NULL(含 PENDING 已過期)= 未在期限內審核;
+    confirmed_by 有值 = admin 核准時前提已變更 → 依 dry_run_diff["stale"] 顯示具體原因
+    (工單現況 / 設備代碼),舊資料無記錄 → 通用句。三語系、v1/v2 皆然。"""
+
+    def _row(token, *, status, confirmed_by, diff, op="close_work_order", params=None):
+        return SimpleNamespace(
+            pending_token=token, operation=op,
+            params=params or {"work_order_no": 90018}, dry_run_diff=diff,
+            status=status, confirmed_by=confirmed_by,
+            created_at=datetime(2026, 7, 4, 9, 0, tzinfo=UTC),
+            expires_at=datetime(2026, 7, 5, 9, 0, tzinfo=UTC),
+            resolved_at=None if status == "PENDING" else datetime(2026, 7, 4, 12, 0, tzinfo=UTC),
+        )
+
+    def _stale(reason, **kw):
+        return {"action": "x", "stale": {"reason": reason, "subject": None,
+                                          "work_order_no": None, "current_status": None, **kw}}
+
+    rows = {
+        "ttl": [_row("a", status="EXPIRED", confirmed_by=None, diff=None)],
+        "ttl_pending": [_row("b", status="PENDING", confirmed_by=None, diff=None)],
+        "wo": [_row("c", status="EXPIRED", confirmed_by="human:alice",
+                    diff=_stale("wo_status", work_order_no=90018,
+                                current_status="IN_PROGRESS"))],
+        "asset": [_row("d", status="EXPIRED", confirmed_by="human:alice",
+                       diff=_stale("asset_retired", subject="EID-001"),
+                       op="open_work_order",
+                       params={"asset_id": "EID-001", "work_type": "REACTIVE"})],
+        "bin": [_row("e", status="EXPIRED", confirmed_by="human:alice",
+                     diff=_stale("bin_unavailable", subject="ES900"), op="update_item",
+                     params={"item_code": "ES900"})],
+        "legacy": [_row("f", status="EXPIRED", confirmed_by="human:alice",
+                        diff={"action": "close_work_order"})],
+    }
+    holder = {"rows": []}
+
+    async def _list(self, *, proposed_by, limit, offset):
+        return list(holder["rows"])
+
+    monkeypatch.setattr(web_routes.WorkOrderService, "list_proposals_by_proposer", _list)
+
+    def _pages(kind, locale):
+        holder["rows"] = rows[kind]
+        as_user["user"].ui_locale = locale
+        out = []
+        for ui in ("v1", "v2"):
+            client.cookies.set("cmms_ui", ui)
+            try:
+                r = client.get("/app/proposals")
+            finally:
+                client.cookies.set("cmms_ui", "v1")  # 還原模組預設(見檔頭 client)
+            assert r.status_code == 200
+            out.append(r.text)
+        return out
+
+    tr = i18n.translate
+    for loc in ("en", "zh-TW", "vi"):
+        for kind in ("ttl", "ttl_pending"):
+            for page in _pages(kind, loc):
+                assert tr("myprop.expired.ttl", loc) in page, (kind, loc)
+                assert tr("myprop.expired.stale", loc) not in page
+        for page in _pages("wo", loc):
+            want = (f"{tr('myprop.expired.wo_status', loc)} "
+                    f"({tr('myprop.expired.now', loc)} {tr('status.IN_PROGRESS', loc)})")
+            assert want in page, loc
+            assert tr("myprop.expired.ttl", loc) not in page
+            assert "alice" in page  # 嘗試核准的 admin
+        for page in _pages("asset", loc):
+            assert "EID-001: " + tr("myprop.expired.asset_retired", loc) in page, loc
+        for page in _pages("bin", loc):
+            assert tr("myprop.expired.bin_unavailable", loc) in page, loc
+        for page in _pages("legacy", loc):
+            assert tr("myprop.expired.stale", loc) in page, loc
+
 def test_my_proposals_requires_login(anon):
     r = client.get("/app/proposals", follow_redirects=False)
     assert r.status_code == 307
