@@ -617,6 +617,29 @@ CATALOG: dict[str, dict[str, str]] = {
             " or already closed), so the proposal was not applied. It has been marked expired"
             " — submit a new proposal if it is still needed."
         ),
+        "admin.prop.err.stale.asset_missing": (
+            "This asset is not in the equipment master, so the work order was not opened. The"
+            " proposal has been marked expired."
+        ),
+        "admin.prop.err.stale.asset_retired": (
+            "This asset was retired after the proposal was made, so the work order was not"
+            " opened. The proposal has been marked expired — reactivate the asset and submit a"
+            " new proposal if it is still needed."
+        ),
+        "admin.prop.err.stale.item_missing": (
+            "This item is no longer in the inventory master, so the edit was not applied. The"
+            " proposal has been marked expired."
+        ),
+        "admin.prop.err.stale.bin_unavailable": (
+            "The storage location in this proposal has been deactivated since it was made, so"
+            " the item edit was not applied. The proposal has been marked expired — submit a new"
+            " proposal with an active location if it is still needed."
+        ),
+        "admin.prop.err.stale.supplier_unknown": (
+            "The supplier in this proposal no longer matches any known supplier (it may have"
+            " been renamed), so the item edit was not applied. The proposal has been marked"
+            " expired — submit a new proposal if it is still needed."
+        ),
         "admin.prop.raw": "Raw params",
         "admin.prop.sources": (
             "Proposals come from engineers (void requests on a work order) and agents (MCP)."
@@ -1613,6 +1636,24 @@ CATALOG: dict[str, dict[str, str]] = {
             "此工單在提案送出後狀態已變更(例如被重新開啟、暫停或已結案),提案未執行,"
             "已標為逾期失效;如仍需要,請重新提案。"
         ),
+        "admin.prop.err.stale.asset_missing": (
+            "此設備不在設備主檔中,工單未開立;提案已標為逾期失效。"
+        ),
+        "admin.prop.err.stale.asset_retired": (
+            "此設備在提案送出後已退役,工單未開立;提案已標為逾期失效。如仍需要,"
+            "請先恢復設備在冊後重新提案。"
+        ),
+        "admin.prop.err.stale.item_missing": (
+            "此品項已不在品項主檔中,修改未執行;提案已標為逾期失效。"
+        ),
+        "admin.prop.err.stale.bin_unavailable": (
+            "提案中的儲位在提案送出後已停用,品項修改未執行;提案已標為逾期失效。"
+            "如仍需要,請改用啟用中的儲位重新提案。"
+        ),
+        "admin.prop.err.stale.supplier_unknown": (
+            "提案中的供應商已對不上任何既有供應商(可能已更名),品項修改未執行;"
+            "提案已標為逾期失效。如仍需要,請重新提案。"
+        ),
         "admin.prop.raw": "原始參數",
         "admin.prop.sources": "提案來源:工程師(工單頁「請求作廢」)與 agent(MCP)。",
         # ADR-019 admin 三讀取螢幕:稽核 feed / 附件治理 / PAT 憑證總覽
@@ -2593,6 +2634,29 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.prop.err.stale": (
             "Đơn công việc này đã thay đổi sau khi đề xuất được tạo (ví dụ: mở lại, tạm dừng"
             " hoặc đã đóng), nên đề xuất không được thực hiện. Đề xuất đã được đánh dấu hết hạn"
+            " — hãy gửi đề xuất mới nếu vẫn cần."
+        ),
+        "admin.prop.err.stale.asset_missing": (
+            "Thiết bị này không có trong danh mục thiết bị, nên đơn công việc không được mở."
+            " Đề xuất đã được đánh dấu hết hạn."
+        ),
+        "admin.prop.err.stale.asset_retired": (
+            "Thiết bị này đã ngừng sử dụng sau khi đề xuất được tạo, nên đơn công việc không"
+            " được mở. Đề xuất đã được đánh dấu hết hạn — hãy kích hoạt lại thiết bị và gửi đề"
+            " xuất mới nếu vẫn cần."
+        ),
+        "admin.prop.err.stale.item_missing": (
+            "Vật tư này không còn trong danh mục vật tư, nên chỉnh sửa không được thực hiện."
+            " Đề xuất đã được đánh dấu hết hạn."
+        ),
+        "admin.prop.err.stale.bin_unavailable": (
+            "Vị trí lưu kho trong đề xuất đã bị ngừng sử dụng sau khi đề xuất được tạo, nên"
+            " chỉnh sửa vật tư không được thực hiện. Đề xuất đã được đánh dấu hết hạn — hãy gửi"
+            " đề xuất mới với vị trí đang hoạt động nếu vẫn cần."
+        ),
+        "admin.prop.err.stale.supplier_unknown": (
+            "Nhà cung cấp trong đề xuất không còn khớp với nhà cung cấp nào (có thể đã đổi"
+            " tên), nên chỉnh sửa vật tư không được thực hiện. Đề xuất đã được đánh dấu hết hạn"
             " — hãy gửi đề xuất mới nếu vẫn cần."
         ),
         "admin.prop.raw": "Tham số gốc",

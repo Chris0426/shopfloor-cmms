@@ -2470,6 +2470,78 @@ def test_admin_confirm_stale_proposal_friendly_message(as_user, monkeypatch):
     assert "boom" in client.get("/admin/proposals?err=boom").text
 
 
+
+@pytest.mark.parametrize(
+    ("reason", "subject"),
+    [
+        ("asset_retired", "EID-001"),
+        ("asset_missing", "EID-404"),
+        ("item_missing", "ES900"),
+        ("bin_unavailable", "ES900"),
+        ("supplier_unknown", "ES900"),
+    ],
+)
+def test_admin_confirm_stale_asset_item_friendly_message(as_user, monkeypatch, reason, subject):
+    """open_work_order / update_item 前提失效(設備退役 / 不在、品項不在 / 儲位停用 / 供應商
+    對不上)→ 303 帶 `admin.prop.err.stale.<reason>` + subj;提案頁依語系顯示說明並點名
+    設備 / 品項(v1/v2 皆然),不吐原始例外字串。"""
+    from cmms.domain.work_order.service import ProposalStale
+
+    as_user["user"].role = "admin"
+
+    async def _confirm(self, *, pending_token, confirmer, at=None):
+        raise ProposalStale("proposal stale: raw text", reason=reason, subject=subject)
+
+    async def _list(self, **kw):
+        return []
+
+    async def _sweep(self, **kw):
+        return 0
+
+    monkeypatch.setattr(web_routes.WorkOrderService, "confirm", _confirm)
+    monkeypatch.setattr(web_routes.WorkOrderService, "list_proposals", _list)
+    monkeypatch.setattr(web_routes.WorkOrderService, "expire_stale_proposals", _sweep)
+    r = client.post("/admin/proposals/tok1/confirm", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc == f"/admin/proposals?err=admin.prop.err.stale.{reason}&subj={subject}"
+    key = f"admin.prop.err.stale.{reason}"
+    for locale in ("en", "zh-TW", "vi"):
+        assert key in i18n.CATALOG[locale]
+        as_user["user"].ui_locale = locale
+        for ui in ("v1", "v2"):
+            client.cookies.set("cmms_ui", ui)
+            try:
+                page = client.get(loc)
+            finally:
+                client.cookies.set("cmms_ui", "v1")  # 還原模組預設(見檔頭 client)
+            assert page.status_code == 200
+            assert f"{subject}: " + i18n.translate(key, locale) in page.text, (locale, ui)
+            assert "proposal stale" not in page.text
+
+
+def test_admin_proposals_stale_subject_not_echoed_raw(as_user, monkeypatch):
+    """subj 只回顯白名單代碼字元;未知 stale.* key 退回通用 stale 句(不回顯 key)。"""
+    as_user["user"].role = "admin"
+    as_user["user"].ui_locale = "en"
+
+    async def _list(self, **kw):
+        return []
+
+    async def _sweep(self, **kw):
+        return 0
+
+    monkeypatch.setattr(web_routes.WorkOrderService, "list_proposals", _list)
+    monkeypatch.setattr(web_routes.WorkOrderService, "expire_stale_proposals", _sweep)
+    page = client.get(
+        "/admin/proposals?err=admin.prop.err.stale.asset_retired&subj=%3Cb%3Ex"
+    )
+    assert i18n.translate("admin.prop.err.stale.asset_retired", "en") in page.text
+    assert "&lt;b&gt;x" not in page.text and "<b>x" not in page.text
+    page = client.get("/admin/proposals?err=admin.prop.err.stale.bogus&subj=EID-1")
+    assert "EID-1: " + i18n.translate("admin.prop.err.stale", "en") in page.text
+    assert "admin.prop.err.stale.bogus" not in page.text
+
 def test_admin_proposals_forbids_engineer(as_user):
     r = client.get("/admin/proposals")                        # 預設 engineer
     assert r.status_code == 403

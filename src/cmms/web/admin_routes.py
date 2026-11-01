@@ -7,6 +7,7 @@ RBAC 兩層(縱深):web `require_admin`(擋非 admin 進頁)+ domain service `_a
 
 from __future__ import annotations
 
+import re
 from contextlib import suppress
 from datetime import date
 from urllib.parse import quote
@@ -331,14 +332,15 @@ async def admin_proposals(
     err: str | None = None,
     wo: int | None = None,
     st: str | None = None,
+    subj: str | None = None,
 ) -> HTMLResponse:
     """待確認提案清單(ADR-016 pending_proposal;admin review + confirm/reject)。
 
     同頁附「使用者回饋」區(內部規格 說明中心回饋落庫):開放中列表 + 近期已處理 fold。
     `err` 以 `admin.prop.err.` 開頭者為 i18n key(在此依 admin 語系翻譯,v1/v2 模板皆直接顯示);
-    `wo` / `st` = 該錯誤關聯的工單號與其現況(僅用於組說明前綴)。
+    `wo` / `st` = 該錯誤關聯的工單號與其現況;`subj` = 關聯的設備 / 品項代碼(皆僅用於組說明前綴)。
     """
-    err = _proposal_err_text(err, wo, st, user.ui_locale)
+    err = _proposal_err_text(err, wo, st, user.ui_locale, subj=subj)
     svc = WorkOrderService(session)
     # lazy sweep:逾期 PENDING → EXPIRED(review f14cf8d:先前無任何路徑落 EXPIRED)
     await svc.expire_stale_proposals(actor=Actor.human(user.user_id))
@@ -352,7 +354,11 @@ async def admin_proposals(
 
 
 def _proposals_redirect(
-    err: str | None = None, *, wo: int | None = None, st: str | None = None
+    err: str | None = None,
+    *,
+    wo: int | None = None,
+    st: str | None = None,
+    subj: str | None = None,
 ) -> RedirectResponse:
     params = []
     if err:
@@ -361,19 +367,35 @@ def _proposals_redirect(
         params.append(f"wo={int(wo)}")
     if st:
         params.append(f"st={quote(st)}")
+    if subj:
+        params.append(f"subj={quote(subj, safe='')}")
     url = "/admin/proposals" + ("?" + "&".join(params) if params else "")
     return RedirectResponse(url=url, status_code=303)
 
 
+# 提案頁 `subj`(設備 / 品項代碼)回顯白名單:一般代碼字元、長度上限(不回顯任意輸入)
+_SUBJ_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._/#()+-]{0,63}")
+
+
 def _proposal_err_text(
-    err: str | None, wo: int | None, st: str | None, locale: str
+    err: str | None,
+    wo: int | None,
+    st: str | None,
+    locale: str,
+    *,
+    subj: str | None = None,
 ) -> str | None:
-    """提案頁錯誤文案:`admin.prop.err.*` key → 在地化句子(前綴 `WO-<no>(<現況>)`);
-    其他值照舊原字串顯示。狀態只接受 catalog 有 `status.<code>` 的值(不回顯任意輸入)。"""
+    """提案頁錯誤文案:`admin.prop.err.*` key → 在地化句子(前綴 `WO-<no>(<現況>)` 或設備 /
+    品項代碼);其他值照舊原字串顯示。狀態只接受 catalog 有 `status.<code>` 的值、代碼只接受
+    `_SUBJ_RE` 白名單(不回顯任意輸入);catalog 無此 key → 退回通用 stale 句。"""
     if not err or not err.startswith("admin.prop.err."):
         return err
+    if err not in CATALOG[DEFAULT_LOCALE]:
+        err = "admin.prop.err.stale"
     text = translate(err, locale)
     if wo is None:
+        if subj and _SUBJ_RE.fullmatch(subj):
+            return f"{subj}: {text}"
         return text
     prefix = f"WO-{wo}"
     if st and f"status.{st}" in CATALOG[DEFAULT_LOCALE]:
@@ -393,10 +415,13 @@ async def admin_confirm_proposal(
             pending_token=pending_token, confirmer=Actor.human(user.user_id)
         )
     except ProposalStale as e:
-        # 提案後工單已被改狀態:未執行、提案已標 EXPIRED → 顯示在地化說明(不吐原始例外字串)
-        return _proposals_redirect(
-            "admin.prop.err.stale", wo=e.work_order_no, st=e.current_status
-        )
+        # 提案前提已不成立(工單被改狀態 / 設備退役 / 品項或儲位失效…):未執行、提案已標
+        # EXPIRED → 顯示在地化說明(不吐原始例外字串)。工單類沿用 `stale` key + wo/st。
+        if e.reason == "wo_status":
+            return _proposals_redirect(
+                "admin.prop.err.stale", wo=e.work_order_no, st=e.current_status
+            )
+        return _proposals_redirect(f"admin.prop.err.stale.{e.reason}", subj=e.subject)
     except (WorkOrderError, AuthorizationError, InventoryError) as e:
         # update_item 提案在 confirm 時走 _update_item_impl,可能拋 InventoryError
         # (負數守門 / 供應商欄限現有值 #7b)→ 回提案頁顯示,不 500

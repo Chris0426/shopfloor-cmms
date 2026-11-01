@@ -291,12 +291,16 @@ pending_proposal(
   pending_token   text PRIMARY KEY,
   operation       text NOT NULL,                  -- 'open_work_order' / 'close_work_order' / ...
   params          jsonb NOT NULL,
-  dry_run_diff    jsonb,
+  dry_run_diff    jsonb,                          -- + key 'stale' {reason, subject, work_order_no, current_status}
+                                                  --   when confirm found the premise gone (see EXPIRED below)
   proposed_by     text NOT NULL,                  -- 'agent:<name>'
   idempotency_key text UNIQUE,
   status          text NOT NULL,                  -- PENDING / CONFIRMED / REJECTED / EXPIRED
-                                                  --   EXPIRED = TTL lapsed, or (confirmed_by set) the WO changed after
-                                                  --   propose so close/void can no longer apply at confirm — not executed
+                                                  --   EXPIRED = TTL lapsed, or (confirmed_by set) the premise no longer
+                                                  --   held at confirm — not executed. stale reasons: wo_status (close/void
+                                                  --   target not allowed), asset_missing / asset_retired (open; retired =
+                                                  --   is_active false, REACTIVE only), item_missing / bin_unavailable /
+                                                  --   supplier_unknown (update_item)
   expires_at      timestamptz NOT NULL,
   confirmed_by    text,                           -- 'human:<id>', filled on confirm; anonymous rejected
   created_at timestamptz, resolved_at timestamptz

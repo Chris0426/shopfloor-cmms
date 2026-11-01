@@ -142,24 +142,63 @@ class InvalidTransition(WorkOrderError):
 
 
 class ProposalStale(InvalidTransition):
-    """提案的前提在 confirm 當下已不成立(提案後工單被重開 / 暫停 / 已結案 / 已作廢…)。
+    """提案的前提在 confirm 當下已不成立(提案後工單被重開 / 暫停 / 已結案、設備已退役、
+    品項主檔不在 / 提案中的儲位已停用…)。
 
     confirm 拋出本例外時:**未執行**提案操作,且提案已在獨立交易標為 EXPIRED
-    (`confirmed_by` = 嘗試確認的 admin,藉此與 TTL 逾期區分)。繼承 InvalidTransition,
-    既有只接 WorkOrderError 的呼叫端(MCP)行為不變;web 端據 `work_order_no` /
-    `current_status` 顯示在地化說明。
+    (`confirmed_by` = 嘗試確認的 admin,藉此與 TTL 逾期區分;`dry_run_diff["stale"]` 記
+    `record()`)。繼承 InvalidTransition,既有只接 WorkOrderError 的呼叫端(MCP)行為不變。
+
+    `reason` ∈ STALE_REASONS;`subject` = 前提所指的實體 id(asset_id / item_code;工單類為
+    None,改看 `work_order_no` / `current_status`)。web 端據此顯示在地化說明。
     """
 
     def __init__(
-        self, message: str, *, work_order_no: int | None, current_status: str | None
+        self,
+        message: str,
+        *,
+        reason: str = "wo_status",
+        subject: str | None = None,
+        work_order_no: int | None = None,
+        current_status: str | None = None,
     ) -> None:
         super().__init__(message)
+        self.reason = reason
+        self.subject = subject
         self.work_order_no = work_order_no
         self.current_status = current_status
 
+    def record(self) -> dict:
+        """落進 `pending_proposal.dry_run_diff["stale"]` 的形狀(提案人頁據此顯示原因)。"""
+        return {
+            "reason": self.reason,
+            "subject": self.subject,
+            "work_order_no": self.work_order_no,
+            "current_status": self.current_status,
+        }
+
+
+# ProposalStale.reason 代碼:
+# - wo_status:工單已不可轉入 close/void 目標狀態(被重開 / 暫停 / 已結案 / 已作廢)
+# - asset_missing:open_work_order 的設備不在主檔(FK 必敗)
+# - asset_retired:REACTIVE open_work_order 的設備已退役(is_active=false;同 `_open_impl` 守門)
+# - item_missing:update_item 的品項不在主檔
+# - bin_unavailable:update_item 提案中的儲位已非 active storage_bin(且不等於品項現值)
+# - supplier_unknown:update_item 提案中的 supplier 已對不上任何既存 organization / supplier 值
+STALE_REASONS = frozenset(
+    {
+        "wo_status",
+        "asset_missing",
+        "asset_retired",
+        "item_missing",
+        "bin_unavailable",
+        "supplier_unknown",
+    }
+)
+
 
 # 工單類提案 → confirm 時該單必須仍可轉入的目標狀態(提案到 confirm 之間工單可能被改,
-# confirm 前依 ALLOWED_TRANSITIONS 重驗;open_work_order / update_item 不在此列)。
+# confirm 前依 ALLOWED_TRANSITIONS 重驗;open_work_order / update_item 前提見 `_proposal_stale`)。
 PROPOSAL_TARGET_STATUS: dict[str, str] = {
     "close_work_order": "CLOSED",
     "void_work_order": "VOIDED",
@@ -2310,8 +2349,9 @@ class WorkOrderService(DomainService):
         不得自行確認自己的提案;自報 human id 不等於審核權(對齊 ADR-016/ADR-027「agent 不能
         自我確認」)。峰會裁決「confirm 回家做」後,PROPOSABLE_OPS(開/結工單)亦一律 admin,
         不再豁免——無現存消費者依賴舊的「Profile A 免 admin」路徑。
-        ③ 工單類提案(close/void)confirm 前重驗該單現況仍可轉入目標狀態;不成立 → 不執行、
-        提案標 EXPIRED、拋 ProposalStale(見 `_assert_proposal_still_applicable`)。"""
+        ③ confirm 前重驗提案前提(close/void:工單仍可轉入目標狀態;open:設備在冊;
+        update_item:品項 / 儲位 / supplier 仍有效);不成立 → 不執行、提案標 EXPIRED、拋
+        ProposalStale(見 `_assert_proposal_still_applicable`)。"""
         if not confirmer.is_human():
             raise WorkOrderError(
                 "confirm requires a verified human:<id> (anonymous/agent rejected)"
@@ -2342,41 +2382,125 @@ class WorkOrderService(DomainService):
     async def _assert_proposal_still_applicable(
         self, proposal: PendingProposal, confirmer: Actor, now: datetime
     ) -> None:
-        """confirm 前重驗工單類提案的前提:該單目前仍可轉入提案的目標狀態。
+        """confirm 前重驗提案的前提(見 `_proposal_stale`)。
 
-        提案(propose 時已驗過)到 confirm 之間工單可能被重開 / 暫停 / 結案 / 作廢。不成立 →
+        提案(propose 時已驗過或未驗)到 confirm 之間工單 / 設備 / 品項 / 儲位可能被改。不成立 →
         **不執行**,在獨立交易把提案標 EXPIRED(終態;`confirmed_by` 記嘗試確認的 admin,
-        與 TTL 逾期〔confirmed_by 為 NULL〕區分)後拋 ProposalStale。不就地留 PENDING:
-        dry-run diff 已與現況不符,日後工單再回到可轉狀態時也不該沿用這份舊審核依據。
-
-        工單列以 `FOR UPDATE` 讀取並刷新(populate_existing):鎖持有到 confirm 的 write()
-        交易結束,檢查與執行之間不會被其他交易改掉狀態。
+        與 TTL 逾期〔confirmed_by 為 NULL〕區分;原因記入 `dry_run_diff["stale"]`)後拋
+        ProposalStale。不就地留 PENDING:dry-run diff 已與現況不符,日後前提再成立時也不該
+        沿用這份舊審核依據。
         """
-        target = PROPOSAL_TARGET_STATUS.get(proposal.operation)
-        if target is None:
-            return
-        wo_no = proposal.params.get("work_order_no")
-        wo = None
-        if wo_no is not None:
-            wo = await self.session.scalar(
-                select(WorkOrder)
-                .where(WorkOrder.work_order_no == wo_no)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-        current = wo.status if wo is not None else None
-        if current is not None and target in ALLOWED_TRANSITIONS.get(current, set()):
+        stale = await self._proposal_stale(proposal)
+        if stale is None:
             return
         async with self.write(confirmer):  # 標記要活過 raise → 獨立交易先 commit(同逾期)
             proposal.status = "EXPIRED"
             proposal.confirmed_by = confirmer.value
             proposal.resolved_at = now
-        raise ProposalStale(
-            f"proposal stale: wo {wo_no} is now {current or 'missing'}, "
-            f"-> {target} no longer allowed; not applied, proposal marked EXPIRED",
-            work_order_no=wo_no,
-            current_status=current,
-        )
+            # JSONB 需整個重新指派才會被追蹤為變更
+            proposal.dry_run_diff = {**(proposal.dry_run_diff or {}), "stale": stale.record()}
+        raise stale
+
+    async def _proposal_stale(self, proposal: PendingProposal) -> ProposalStale | None:
+        """回 confirm 當下已不成立的前提(ProposalStale,尚未 raise);皆成立回 None。
+
+        只驗執行路徑實際會擋、且提案後可能改變的前提:
+        - close/void:工單仍可轉入目標狀態(ALLOWED_TRANSITIONS)。
+        - open_work_order:設備仍在主檔(FK);REACTIVE 另須在冊(is_active,同 `_open_impl`)。
+        - update_item:品項仍在主檔;提案中的儲位 / supplier 仍通過 `_update_item_impl` 的同一
+          驗證(儲位可被停用、organization 可被改名)。
+
+        有實體列者以 `FOR UPDATE` 讀取並刷新(populate_existing):鎖持有到 confirm 的 write()
+        交易結束,檢查與執行之間不會被其他交易改掉(例:退役設備、改工單狀態)。
+        """
+        params = proposal.params or {}
+        op = proposal.operation
+        target = PROPOSAL_TARGET_STATUS.get(op)
+        if target is not None:
+            wo_no = params.get("work_order_no")
+            wo = None
+            if wo_no is not None:
+                wo = await self.session.scalar(
+                    select(WorkOrder)
+                    .where(WorkOrder.work_order_no == wo_no)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            current = wo.status if wo is not None else None
+            if current is not None and target in ALLOWED_TRANSITIONS.get(current, set()):
+                return None
+            return ProposalStale(
+                f"proposal stale: wo {wo_no} is now {current or 'missing'}, "
+                f"-> {target} no longer allowed; not applied, proposal marked EXPIRED",
+                reason="wo_status",
+                work_order_no=wo_no,
+                current_status=current,
+            )
+        if op == "open_work_order":
+            asset_id = params.get("asset_id")
+            asset = None
+            if asset_id is not None:
+                asset = await self.session.scalar(
+                    select(Asset)
+                    .where(Asset.asset_id == asset_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            if asset is None:
+                return ProposalStale(
+                    f"proposal stale: asset {asset_id} not in master; "
+                    "not applied, proposal marked EXPIRED",
+                    reason="asset_missing",
+                    subject=asset_id,
+                )
+            if params.get("work_type") == "REACTIVE" and not asset.is_active:
+                return ProposalStale(
+                    f"proposal stale: asset {asset_id} is retired; "
+                    "not applied, proposal marked EXPIRED",
+                    reason="asset_retired",
+                    subject=asset_id,
+                )
+            return None
+        if op == "update_item":
+            code = params.get("item_code")
+            item = None
+            if code:
+                item = await self.session.scalar(
+                    select(InventoryItem)
+                    .where(InventoryItem.item_code == code)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            if item is None:
+                return ProposalStale(
+                    f"proposal stale: inventory_item {code} not found; "
+                    "not applied, proposal marked EXPIRED",
+                    reason="item_missing",
+                    subject=code,
+                )
+            coerced = self._coerce_item_params(params)
+            inv = InventoryService(self.session)
+            try:
+                await inv._validate_bin_location(
+                    coerced["bin_location"], current=item.bin_location
+                )
+            except InventoryError:
+                return ProposalStale(
+                    f"proposal stale: item {code}: bin_location {coerced['bin_location']!r} "
+                    "is no longer an active storage bin; not applied, proposal marked EXPIRED",
+                    reason="bin_unavailable",
+                    subject=code,
+                )
+            supplier = coerced["supplier"]
+            if supplier is not None and not await inv._supplier_value_known(supplier):
+                return ProposalStale(
+                    f"proposal stale: item {code}: supplier {supplier!r} no longer known; "
+                    "not applied, proposal marked EXPIRED",
+                    reason="supplier_unknown",
+                    subject=code,
+                )
+            return None
+        return None
 
     async def reject(self, *, pending_token: str, by: Actor, at: datetime | None = None) -> None:
         """丟棄提案(不執行)。低風險(只把 PENDING → REJECTED),故不強制 admin;但**拒匿名/agent**

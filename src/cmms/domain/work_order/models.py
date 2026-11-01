@@ -148,8 +148,9 @@ class PendingProposal(Base):
     """ADR-016 兩階段外部確認的待確認意圖。propose 建立、confirm 執行(經單一寫入路徑)。
 
     token ≠ 授權:授權來自 confirm 時攜帶的已驗證 `human:<id>`(拒匿名)。冪等用 idempotency_key
-    (同 key 重複 propose 回既有 token)。逾時(expires_at)→ EXPIRED;confirm 時工單已不可轉入
-    提案目標狀態(提案後被改)→ 亦標 EXPIRED 且 confirmed_by 記嘗試確認者;confirm/reject 為終態。
+    (同 key 重複 propose 回既有 token)。逾時(expires_at)→ EXPIRED;confirm 時提案前提已不成立
+    (工單不可轉入目標狀態 / 設備退役 / 品項或儲位失效…)→ 亦標 EXPIRED、confirmed_by 記嘗試確認者、
+    原因記 dry_run_diff["stale"];confirm/reject 為終態。
     """
 
     __tablename__ = "pending_proposal"

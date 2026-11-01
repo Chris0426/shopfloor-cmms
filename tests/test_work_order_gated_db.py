@@ -340,6 +340,12 @@ async def test_confirm_close_stale_after_reopen(session) -> None:
         pp = await fresh.get(PendingProposal, p.pending_token)
         assert pp.status == "EXPIRED" and pp.confirmed_by == "human:alice"
         assert pp.resolved_at is not None
+        # 原因落庫(提案人頁據此顯示),原 dry-run diff 保留
+        assert pp.dry_run_diff["stale"] == {
+            "reason": "wo_status", "subject": None,
+            "work_order_no": no, "current_status": "IN_PROGRESS",
+        }
+        assert pp.dry_run_diff["action"] == "close_work_order"
         assert (await fresh.get(WorkOrder, no)).status == "IN_PROGRESS"
     cur = await session.get(WorkOrder, no)
     assert cur.status == "IN_PROGRESS"  # 未被結案
@@ -395,6 +401,193 @@ async def test_confirm_close_still_valid_unaffected(session) -> None:
     )
     assert closed.status == "CLOSED"
 
+
+
+async def _wo_count(session) -> int:
+    from sqlalchemy import func, select
+
+    from cmms.domain.work_order.models import WorkOrder
+
+    return await session.scalar(select(func.count()).select_from(WorkOrder))
+
+
+async def _assert_expired_stale(session, token: str, reason: str, subject: str) -> None:
+    """以新 session 讀:提案 EXPIRED、confirmed_by = 嘗試確認的 admin、原因已落 dry_run_diff。"""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from cmms.domain.work_order.models import PendingProposal
+
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as fresh:
+        pp = await fresh.get(PendingProposal, token)
+        assert pp.status == "EXPIRED" and pp.confirmed_by == "human:alice"
+        assert pp.resolved_at is not None
+        assert pp.dry_run_diff["stale"]["reason"] == reason
+        assert pp.dry_run_diff["stale"]["subject"] == subject
+
+
+async def test_confirm_open_stale_after_asset_retired(session) -> None:
+    """REACTIVE 開單提案後設備被退役(is_active=false,另一個 session):confirm 不開單、
+    拋 ProposalStale(asset_retired, subject=asset_id)、提案 EXPIRED;之後不可再 confirm。"""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from cmms.domain.asset.service import AssetService
+    from cmms.domain.work_order.service import InvalidTransition, ProposalStale
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    p = await svc.propose(
+        operation="open_work_order",
+        params={"asset_id": "EID-001", "work_type": "REACTIVE", "brief_description": "leak"},
+        proposed_by=Actor.agent("analytics"), at=_ts(10),
+    )
+    before = await _wo_count(session)
+    # 另一個 session 退役設備:本 session identity map 仍是 is_active=True → 驗 confirm 重讀
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as other:
+        await AssetService(other).set_asset_active("EID-001", False, alice)
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert isinstance(ei.value, InvalidTransition)  # MCP 只接 WorkOrderError,不受影響
+    assert ei.value.reason == "asset_retired" and ei.value.subject == "EID-001"
+    assert ei.value.work_order_no is None
+    await _assert_expired_stale(session, p.pending_token, "asset_retired", "EID-001")
+    assert await _wo_count(session) == before  # 未開單
+    with pytest.raises(WorkOrderError, match="not pending"):
+        await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 6))
+
+
+async def test_confirm_open_stale_asset_missing(session) -> None:
+    """開單提案的設備不在主檔(propose 不驗設備;confirm 原本撞 domain 拒 / FK)→ asset_missing。"""
+    from cmms.domain.work_order.service import ProposalStale
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    p = await svc.propose(
+        operation="open_work_order",
+        params={"asset_id": "EID-404", "work_type": "REACTIVE"},
+        proposed_by=Actor.agent("analytics"), at=_ts(10),
+    )
+    before = await _wo_count(session)
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert ei.value.reason == "asset_missing" and ei.value.subject == "EID-404"
+    await _assert_expired_stale(session, p.pending_token, "asset_missing", "EID-404")
+    assert await _wo_count(session) == before
+
+
+async def _seed_item(session, alice: Actor, **kw):
+    from cmms.domain.inventory.service import InventoryService
+
+    return await InventoryService(session).create_item("ES900", actor=alice, name="Seal", **kw)
+
+
+def _item_params(**over) -> dict:
+    params = {
+        "item_code": "ES900", "name": "Seal v2", "description": "", "vendor_part_no": "",
+        "bin_location": "", "reorder_point": "", "reorder_quantity": "",
+        "lead_time_weeks": "", "unit_cost": "", "supplier": "", "supplier_org_id": "",
+        "weblink": "", "comment": "", "is_stocked": True, "is_obsolete": False,
+    }
+    params.update(over)
+    return params
+
+
+async def test_confirm_update_item_stale_bin_deactivated(session) -> None:
+    """品項修改提案把儲位改成 B-07,提案後 B-07 被停用:confirm 不改主檔、bin_unavailable。"""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from cmms.domain.inventory.models import InventoryItem
+    from cmms.domain.inventory.service import InventoryService
+    from cmms.domain.work_order.service import ProposalStale
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    await InventoryService(session).add_storage_bin("B-07", actor=alice)
+    await _seed_item(session, alice)
+    p = await svc.propose(
+        operation="update_item", params=_item_params(bin_location="B-07"),
+        proposed_by=Actor.human("eng1"), at=_ts(10),
+    )
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as other:
+        await InventoryService(other).set_storage_bin_active("B-07", is_active=False, actor=alice)
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert ei.value.reason == "bin_unavailable" and ei.value.subject == "ES900"
+    await _assert_expired_stale(session, p.pending_token, "bin_unavailable", "ES900")
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as fresh:
+        item = await fresh.get(InventoryItem, "ES900")
+        assert item.name == "Seal" and item.bin_location is None  # 未執行
+
+
+async def test_confirm_update_item_stale_supplier_renamed(session) -> None:
+    """提案的 supplier 對得上 organization 名,提案後該 org 更名(無其他品項用舊名):
+    confirm 不改主檔、supplier_unknown。"""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from cmms.domain.contacts.service import ContactsService
+    from cmms.domain.inventory.models import InventoryItem
+    from cmms.domain.work_order.service import ProposalStale
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    org = await ContactsService(session).create_organization(actor=alice, name="Acme Seals")
+    await _seed_item(session, alice)
+    p = await svc.propose(
+        operation="update_item", params=_item_params(supplier="Acme Seals"),
+        proposed_by=Actor.human("eng1"), at=_ts(10),
+    )
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as other:
+        await ContactsService(other).update_organization(
+            org.org_id, actor=alice, name="Acme Sealing Co",
+            org_type=None, website=None, address=None, phone=None,
+        )
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert ei.value.reason == "supplier_unknown" and ei.value.subject == "ES900"
+    await _assert_expired_stale(session, p.pending_token, "supplier_unknown", "ES900")
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as fresh:
+        item = await fresh.get(InventoryItem, "ES900")
+        assert item.name == "Seal" and item.supplier is None
+
+
+async def test_confirm_update_item_stale_item_missing(session) -> None:
+    """提案後品項列不見了(domain 無刪除路徑;以 SQL 模擬庫外移除)→ item_missing,不 500。"""
+    from sqlalchemy import text
+
+    from cmms.domain.work_order.service import ProposalStale
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    await _seed_item(session, alice)
+    p = await svc.propose(
+        operation="update_item", params=_item_params(),
+        proposed_by=Actor.human("eng1"), at=_ts(10),
+    )
+    await session.execute(text("DELETE FROM inventory_item WHERE item_code = 'ES900'"))
+    await session.commit()
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert ei.value.reason == "item_missing" and ei.value.subject == "ES900"
+    await _assert_expired_stale(session, p.pending_token, "item_missing", "ES900")
+
+
+async def test_confirm_update_item_bin_still_valid_unaffected(session) -> None:
+    """重驗不誤擋:儲位仍 active、supplier 仍對得上 → confirm 照常執行。"""
+    from cmms.domain.contacts.service import ContactsService
+    from cmms.domain.inventory.service import InventoryService
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    await InventoryService(session).add_storage_bin("B-07", actor=alice)
+    await ContactsService(session).create_organization(actor=alice, name="Acme Seals")
+    await _seed_item(session, alice)
+    p = await svc.propose(
+        operation="update_item",
+        params=_item_params(bin_location="b-07", supplier="Acme Seals"),
+        proposed_by=Actor.human("eng1"), at=_ts(10),
+    )
+    item = await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert item.name == "Seal v2" and item.bin_location == "B-07"
+    assert item.supplier == "Acme Seals"
 
 async def test_onbox_open_and_idempotent(session) -> None:
     svc = WorkOrderService(session)
