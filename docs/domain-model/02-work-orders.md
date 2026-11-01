@@ -180,6 +180,45 @@ A downstream analytics consumer's follow-up loop has an agent **propose** openin
 - Constraints: a token is **not** an authorization (authorization comes from the confirmer's identity; **anonymous is rejected**); **every confirm requires a currently active admin** (opening/closing work orders are no longer exempt — now that `/mcp` is on the public internet, a holder of a valid scoped token must not be able to self-confirm; enforced in the domain layer, aligned with ADR-016/027, the agent constitution). The confirmer's identity is **bound to the `/mcp` token** (a self-declared `confirmer` parameter is not accepted). **Agent authority is not widened** (high-risk operations such as void or Key Change remain outside what an agent may even propose); idempotency follows ADR-006.
 - The audit trail records both `proposed_by` and `confirmed_by`; the final `source_actor` is the confirmer (see the §8 schema / ADR-005).
 
+#### 3.2.1 Propose-time validation and the confirm-time re-check
+
+A proposal is a stored record, so a bad value must not get in and only blow up (raw) when an admin confirms. The rule is: **propose rejects what the direct write path would reject, using the same code**; **confirm re-checks what can change between propose and confirm**. Everything below is in `WorkOrderService` (`propose`, `confirm`) unless noted.
+
+**(a) Propose-time validation.** A failure raises `WorkOrderError` before any row or audit entry is written (the MCP caller gets a clean error; the web propose form keeps its localized "check number fields" banner).
+
+| Operation | Checked at propose | Rule comes from |
+|---|---|---|
+| `update_item` | item exists; numbers parse; `reorder_point` / `reorder_quantity` / `unit_cost` / `lead_time_weeks` are finite, fit the column, and are not negative; `supplier_org_id` (if given) is an existing organization | `_validate_item_proposal_values` → `_coerce_item_params` (parse) and the shared `InventoryService._validate_item_numbers` (`_fits_item_column` reads precision/scale from the `inventory_item` model: `Numeric(12,3)` / `Numeric(14,5)` checked **after** PG's round-half-up, `int4` for weeks; `_non_negative`) and `_clean_supplier_org`. `create_item` and `_update_item_impl` use the same functions, so the direct edit and the proposal cannot drift apart |
+| `open_work_order` | `work_type` exists in the `work_type` lookup | it is an FK (`work_type.code`): a missing code would always fail at execute |
+| `close_work_order` | work order exists and is `COMPLETED`; `confirmed_reason_code` (if any) exists and is `is_active`, and the work order is REACTIVE | `_validate_confirmed_reason` + `_assert_reason_applicable` (the same two calls as a direct close) |
+| `void_work_order` | work order exists and `VOIDED` is allowed from its current status | `ALLOWED_TRANSITIONS` |
+
+**Deliberately not validated at propose**: (1) free-text fields with no constraint anywhere (item name / description / vendor part no. / weblink / comment, work-order descriptions) — there is no rule to share, and inventing one only at propose would make proposals stricter than the admin's direct edit; (2) **mutable premises** — the asset (exists / retired), the storage-bin text and the supplier text of an `update_item`. They can change after propose, so a propose-time pass proves nothing; they are left to the confirm-time check below, which is the single place that decides.
+
+**(b) Confirm-time re-check.** `confirm()` calls `_assert_proposal_still_applicable` → `_proposal_stale` after the admin check and before executing. If a premise no longer holds, **nothing is executed**; the proposal is marked `EXPIRED` in its own audited write (so the mark survives the raise) and `ProposalStale(reason, subject, ...)` is raised. `ProposalStale` subclasses `InvalidTransition` → `WorkOrderError`, so callers that only catch `WorkOrderError` (MCP) are unaffected. Reasons (`STALE_REASONS`):
+
+| `reason` | Operation | Meaning |
+|---|---|---|
+| `wo_status` | close / void | the work order can no longer move to the target status (reopened, put on hold, already closed / voided, or gone) |
+| `asset_missing` | open | the asset is not in the master |
+| `asset_retired` | open (REACTIVE only) | the asset is `is_active=false` (same guard as `_open_impl`) |
+| `item_missing` | update_item | the item is gone |
+| `bin_unavailable` | update_item | the proposed bin is no longer an active `storage_bin` (and is not the item's current value) |
+| `supplier_unknown` | update_item | the proposed supplier text matches no organization name and no item's supplier value any more (e.g. the organization was renamed) |
+| `reason_code_retired` | close | the efc `confirmed_reason_code` was retired (`is_active=false`) or no longer exists; `subject` = the code |
+
+**EXPIRED marking.** `status = EXPIRED`, `resolved_at` set, **`confirmed_by` = the admin who attempted the confirm**, and `dry_run_diff["stale"] = {reason, subject, work_order_no, current_status}` (`ProposalStale.record()`; the whole JSONB value is reassigned so the change is tracked). A **TTL expiry** (`confirm` on a lapsed token, or the `expire_stale_proposals` sweep) leaves `confirmed_by` **NULL** and writes no `stale` key — that is how the two kinds are told apart. The admin page shows a localized message per reason (`admin.prop.err.stale.<reason>`; the subject is echoed only if it matches a code-character whitelist), the proposer's page reads `stale.reason` (`myprop.expired.<reason>`; legacy rows without the key get a generic sentence). EXPIRED is terminal: a stale proposal is never revived, because its dry-run diff no longer matches reality.
+
+**(c) Lock order at confirm.** The re-check takes row locks that are held until the execute transaction ends, so the check and the write see the same data. The order is fixed so concurrent confirms cannot form a cycle:
+
+- close / void: `work_order` `FOR UPDATE` → `equipment_failure_code` `FOR SHARE` (close with an efc code only; `_proposal_stale`).
+- open: `asset` `FOR UPDATE`.
+- update_item: `inventory_item` `FOR UPDATE` → `storage_bin` `FOR SHARE` (by code, case-insensitive, active or not; skipped when blank or equal to the item's current bin) → `organization` `FOR SHARE` (rows whose name matches the proposed supplier, by `org_id`) (`InventoryService._lock_item_references`).
+
+Why **FOR SHARE** for the referenced rows: it blocks the writers that would invalidate the premise (`UPDATE` such as deactivate / rename) while not blocking other readers or the FK `KEY SHARE` checks of unrelated inserts. Why the order is safe: the writers of those rows (`set_storage_bin_active`, `update_organization`, the vocabulary retire) each touch a single row and never take an item / work-order lock afterwards.
+
+**The unlocked fallback.** `_supplier_value_known` also accepts "another item already uses this supplier text". That evidence is an arbitrary set of other items' rows; locking them would interleave with other confirms' own item `FOR UPDATE` locks in an unpredictable order (deadlock risk), so it is **not locked**. It is covered instead after the fact: if executing the item edit then fails with an `InventoryError`, `_expire_if_stale_after_failure` re-runs the check in a fresh transaction — a lost premise marks the proposal EXPIRED and raises `ProposalStale(supplier_unknown)`; anything else re-raises the original error and the proposal stays PENDING.
+
 ### 3.3 ★ Open / close notifications (Slice B; migration 0030 + Slice D watch lists, 0032) ★
 
 Work-order **open** (REACTIVE reports + PM generation) and **close** notify the relevant people (downtime is time-critical). Mid-life note updates do **not** notify.
@@ -300,7 +339,8 @@ pending_proposal(
                                                   --   held at confirm — not executed. stale reasons: wo_status (close/void
                                                   --   target not allowed), asset_missing / asset_retired (open; retired =
                                                   --   is_active false, REACTIVE only), item_missing / bin_unavailable /
-                                                  --   supplier_unknown (update_item)
+                                                  --   supplier_unknown (update_item), reason_code_retired (close with
+                                                  --   an efc confirmed_reason_code)
   expires_at      timestamptz NOT NULL,
   confirmed_by    text,                           -- 'human:<id>', filled on confirm; anonymous rejected
   created_at timestamptz, resolved_at timestamptz

@@ -70,6 +70,8 @@ Governed operations (admin-only, single write path, mirroring `wo_hold_reason`):
 
 **Write-path validation (`_validate_bin_location`)**: blank → None; equal to the item's current value → **passed through as-is** (legacy dirty values — CSV column-shift artefacts — must not block unrelated edits to other fields); otherwise it is matched case-insensitively against the **active** `storage_bin` rows, returning the canonical code on a hit (normalizing case, e.g. `drawer` → `Drawer`) and rejecting if there is no match. This is wired into `create_item` (current value = None) and `_update_item_impl` (current value = `item.bin_location`); because that core is shared by both the admin's direct edit and the proposal-confirm path, **confirmed proposals are validated automatically too**.
 
+**`update_item` proposals** (engineer edits): the numeric / supplier-org rules above are applied again at propose time through the same functions (`_validate_item_numbers`, `_clean_supplier_org`), while the bin and supplier **text** are re-checked at confirm under `FOR SHARE` locks (item → storage_bin → organization) and can expire the proposal (`bin_unavailable` / `supplier_unknown` / `item_missing`). Details: [02-work-orders.md §3.2.1](02-work-orders.md).
+
 ---
 
 ## 2. Operations (CRUD + actions)
