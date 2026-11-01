@@ -165,5 +165,19 @@ docker compose exec hermes curl -s http://127.0.0.1:8080/health
 curl -s http://127.0.0.1:8797/health   # 或在 host 端(公開 compose 疊加 docker-compose.public.yml 後)
 ```
 
+#### 讀今日用量(`scripts/hermes_usage.py`)
+
+唯讀、僅標準庫,GET `/health` 後印出今日題數(總計、逐 target 題數與不同來源數)與預算狀態;
+不碰 SQLite 帳本。`/health` 目前不公開「每來源每日題數上限」,故不顯示。
+host 端預設 URL 即 `http://127.0.0.1:8797`(`docker-compose.public.yml` 把 hermes 發佈在 127.0.0.1:8797,
+僅本機可達;基礎 `docker-compose.yml` 沒有發佈 port)。退出碼:0 正常、1 連不上、2 用量欄位 unavailable/缺失。
+
+```bash
+ssh vgw 'cd /opt/shopfloor-cmms && python3 scripts/hermes_usage.py'          # Oracle host(8797)
+python3 scripts/hermes_usage.py --url http://127.0.0.1:8797 --json            # 只印 questions 原始 JSON
+# 若沒疊加 public compose(port 未發佈,僅 compose 網路內可達):
+docker compose exec hermes curl -s http://127.0.0.1:8080/health
+```
+
 > scoped token 的發放見 `docs/integrations/agent-pilot.md`(`cmms mcp-token`)。dock 正式
 > 接線時由 cmms web 於 session 換發短時效 token,不需人工。
