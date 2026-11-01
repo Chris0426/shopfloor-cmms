@@ -418,7 +418,7 @@ async def test_set_assignee_and_open_with_owner(session) -> None:
     with pytest.raises(WorkOrderError):
         await svc.set_assignee(wo.work_order_no, assigned_person="X", actor=ACTOR)
     # 自動完成:歷史指派名(工單 ∪ PM)
-    names = await svc.list_assignee_suggestions("lin")
+    names = await svc.list_assignee_suggestions("TANG")  # ilike:大小寫不敏感、子字串
     assert names == ["Nina Tang"]  # 來自載入的 30167
 
 
