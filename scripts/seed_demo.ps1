@@ -5,7 +5,13 @@
 #   $env:CMMS_DATABASE_URL = "postgresql+asyncpg://cmms:cmms@localhost:5432/cmms"
 #   .\scripts\seed_demo.ps1
 #
-# Safe to re-run: the loaders upsert; accounts + live scenario are skipped once they exist.
+# Safe to re-run: the loaders upsert; accounts + live scenario are skipped once they exist
+# (SEED_FORCE=1 runs them anyway) - except the film's fixed story (scripts/seed_demo_story.py:
+# EID-97061, WO-96320/96321), which is idempotent and forward-only and runs every time.
+#
+# Env:
+#   DEMO_STORY_UNTIL   optional, passed to seed_demo_story.py as --until
+#                      (ISO, naive = Asia/Taipei); empty = the whole story
 #
 # Local-dev only: the ledger mode of seed_demo.sh (SEED_DIR, docker-compose.seed.yml) is not
 # mirrored here; run `cmms seed-events` directly instead (docs/SYNTHETIC-INSTANCE.md).
@@ -83,6 +89,17 @@ if ($adminCreated -or $env:SEED_FORCE -eq "1") {
 }
 
 $ErrorActionPreference = "Stop"
+
+# (f) the film's fixed story. Outside the sentinel on purpose: it is idempotent and
+#     forward-only, so a re-run fills in whatever is missing. It must come after the PM
+#     generation: the PM work orders auto-number from max+1, and the story pins 96320/96321.
+$untilSuffix = if ($env:DEMO_STORY_UNTIL) { " --until $($env:DEMO_STORY_UNTIL)" } else { "" }
+Write-Host "==> 5/5 (f) film story$untilSuffix"
+$StoryArgs = @()
+if ($env:DEMO_STORY_UNTIL) { $StoryArgs += @("--until", $env:DEMO_STORY_UNTIL) }
+& $Py scripts/seed_demo_story.py @StoryArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host ""
 Write-Host "============================================================"
 Write-Host "  Demo ready:  http://localhost:8000"
