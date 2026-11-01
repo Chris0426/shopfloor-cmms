@@ -883,15 +883,44 @@ _SECRET_MARKERS = ("sk-ant", "bearer", "authorization", "x-api-key", "api_key", 
 _LEAF_ERROR_MAX = 200
 
 
+_LEAF_MAX_DEPTH = 10
+
+
+def _api_error_type() -> type | None:
+    """anthropic.APIError(惰性載入;codex 部署沒裝 anthropic 時回 None)。"""
+    try:
+        return _sibling("llm_anthropic").anthropic.APIError
+    except Exception:
+        return None
+
+
+def _pick_leaf(exc: BaseException, api_type: type | None, depth: int = 0) -> BaseException:
+    """深度優先找葉子:優先第一個 APIError,否則第一個葉子;深度到上限就停在該層。"""
+    leaves: list[BaseException] = []
+
+    def walk(node: BaseException, level: int) -> None:
+        if isinstance(node, BaseExceptionGroup) and node.exceptions and level < _LEAF_MAX_DEPTH:
+            for sub in node.exceptions:
+                walk(sub, level + 1)
+        else:
+            leaves.append(node)
+
+    walk(exc, depth)
+    if api_type is not None:
+        for leaf in leaves:
+            if isinstance(leaf, api_type):
+                return leaf
+    return leaves[0]
+
+
 def _leaf_error(exc: BaseException) -> str:
-    """log 用的錯誤摘要:ExceptionGroup 一路取第一個子例外到葉子 → `類別: 訊息`。
+    """log 用的錯誤摘要:遞迴展開 ExceptionGroup,優先取第一個 anthropic.APIError 葉子,
+    沒有就取深度優先的第一個葉子 → `類別: 訊息`(最深展開 10 層)。
 
     MCP / anyio 的錯誤常包成多層 ExceptionGroup,只記外層類別看不出根因。
     ★ 安全:訊息含 token / key 相關片段就只回類別名;訊息壓成單行並截到 200 字元。
     """
-    leaf: BaseException = exc
-    while isinstance(leaf, BaseExceptionGroup) and leaf.exceptions:
-        leaf = leaf.exceptions[0]
+    leaf = _pick_leaf(exc, _api_error_type())
     name = type(leaf).__name__
     message = str(leaf)
     lowered = message.lower()

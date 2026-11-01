@@ -546,3 +546,27 @@ def test_leaf_error_masks_secret_bearing_messages(message):
     out = gateway._leaf_error(group)
     assert out == "ConnectionError"
     assert "SHOULD-NOT-LEAK" not in out
+
+
+def test_leaf_error_unwraps_three_level_group():
+    nested = ExceptionGroup(
+        "a", [ExceptionGroup("b", [ExceptionGroup("c", [ValueError("deep")])])]
+    )
+    assert gateway._leaf_error(nested) == "ValueError: deep"
+
+
+def test_leaf_error_prefers_api_error_and_maps_to_contract_code():
+    import anthropic
+    import httpx
+
+    llm = gateway._sibling("llm_anthropic")
+    api = anthropic.APIConnectionError(request=httpx.Request("POST", "https://x.invalid"))
+    group = ExceptionGroup("g", [ExceptionGroup("h", [KeyError("generic")]), api])
+    assert gateway._leaf_error(group).startswith("APIConnectionError")
+    mapped = llm.translate_error(llm._first_api_error(group))
+    assert isinstance(mapped, llm.LLMBackendError)
+    assert str(mapped) == "anthropic unreachable"
+
+
+def test_leaf_error_plain_exception_unchanged():
+    assert gateway._leaf_error(KeyError("k")) == "KeyError: 'k'"
