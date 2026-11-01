@@ -612,6 +612,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.prop.op.open_work_order": "Open work order",
         "admin.prop.op.close_work_order": "Close work order",
         "admin.prop.op.update_item": "Edit inventory item",
+        "admin.prop.err.stale": (
+            "This work order changed after the proposal was made (e.g. reopened, put on hold"
+            " or already closed), so the proposal was not applied. It has been marked expired"
+            " — submit a new proposal if it is still needed."
+        ),
         "admin.prop.raw": "Raw params",
         "admin.prop.sources": (
             "Proposals come from engineers (void requests on a work order) and agents (MCP)."
@@ -1604,6 +1609,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.prop.op.open_work_order": "開立工單",
         "admin.prop.op.close_work_order": "結案工單",
         "admin.prop.op.update_item": "修改品項主檔",
+        "admin.prop.err.stale": (
+            "此工單在提案送出後狀態已變更(例如被重新開啟、暫停或已結案),提案未執行,"
+            "已標為逾期失效;如仍需要,請重新提案。"
+        ),
         "admin.prop.raw": "原始參數",
         "admin.prop.sources": "提案來源:工程師(工單頁「請求作廢」)與 agent(MCP)。",
         # ADR-019 admin 三讀取螢幕:稽核 feed / 附件治理 / PAT 憑證總覽
@@ -2581,6 +2590,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.prop.op.open_work_order": "Mở đơn",
         "admin.prop.op.close_work_order": "Đóng đơn",
         "admin.prop.op.update_item": "Sửa vật tư",
+        "admin.prop.err.stale": (
+            "Đơn công việc này đã thay đổi sau khi đề xuất được tạo (ví dụ: mở lại, tạm dừng"
+            " hoặc đã đóng), nên đề xuất không được thực hiện. Đề xuất đã được đánh dấu hết hạn"
+            " — hãy gửi đề xuất mới nếu vẫn cần."
+        ),
         "admin.prop.raw": "Tham số gốc",
         "admin.prop.sources": "Đề xuất đến từ kỹ sư (yêu cầu vô hiệu trên đơn) và agent (MCP).",
         # ADR-019 admin 三讀取螢幕

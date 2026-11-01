@@ -29,7 +29,8 @@ from cmms.domain.inventory.service import InventoryError, InventoryService
 from cmms.domain.notify.service import NotificationService, NotifyError
 from cmms.domain.pm_schedule.service import PmScheduleError, PmScheduleService
 from cmms.domain.task.service import TaskError, TaskService
-from cmms.domain.work_order.service import WorkOrderError, WorkOrderService
+from cmms.domain.work_order.service import ProposalStale, WorkOrderError, WorkOrderService
+from cmms.web.i18n import CATALOG, DEFAULT_LOCALE, translate
 from cmms.web.routes import _LOGIN, _is_htmx, _render, get_current_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -328,11 +329,16 @@ async def admin_proposals(
     session: AsyncSession = Depends(get_session),
     user: UserAccount = Depends(require_admin),
     err: str | None = None,
+    wo: int | None = None,
+    st: str | None = None,
 ) -> HTMLResponse:
     """待確認提案清單(ADR-016 pending_proposal;admin review + confirm/reject)。
 
     同頁附「使用者回饋」區(內部規格 說明中心回饋落庫):開放中列表 + 近期已處理 fold。
+    `err` 以 `admin.prop.err.` 開頭者為 i18n key(在此依 admin 語系翻譯,v1/v2 模板皆直接顯示);
+    `wo` / `st` = 該錯誤關聯的工單號與其現況(僅用於組說明前綴)。
     """
+    err = _proposal_err_text(err, wo, st, user.ui_locale)
     svc = WorkOrderService(session)
     # lazy sweep:逾期 PENDING → EXPIRED(review f14cf8d:先前無任何路徑落 EXPIRED)
     await svc.expire_stale_proposals(actor=Actor.human(user.user_id))
@@ -345,9 +351,34 @@ async def admin_proposals(
                    feedback_open=feedback_open, feedback_resolved=feedback_resolved)
 
 
-def _proposals_redirect(err: str | None = None) -> RedirectResponse:
-    url = "/admin/proposals" + (f"?err={quote(err)}" if err else "")
+def _proposals_redirect(
+    err: str | None = None, *, wo: int | None = None, st: str | None = None
+) -> RedirectResponse:
+    params = []
+    if err:
+        params.append(f"err={quote(err)}")
+    if wo is not None:
+        params.append(f"wo={int(wo)}")
+    if st:
+        params.append(f"st={quote(st)}")
+    url = "/admin/proposals" + ("?" + "&".join(params) if params else "")
     return RedirectResponse(url=url, status_code=303)
+
+
+def _proposal_err_text(
+    err: str | None, wo: int | None, st: str | None, locale: str
+) -> str | None:
+    """提案頁錯誤文案:`admin.prop.err.*` key → 在地化句子(前綴 `WO-<no>(<現況>)`);
+    其他值照舊原字串顯示。狀態只接受 catalog 有 `status.<code>` 的值(不回顯任意輸入)。"""
+    if not err or not err.startswith("admin.prop.err."):
+        return err
+    text = translate(err, locale)
+    if wo is None:
+        return text
+    prefix = f"WO-{wo}"
+    if st and f"status.{st}" in CATALOG[DEFAULT_LOCALE]:
+        prefix += f" ({translate(f'status.{st}', locale)})"
+    return f"{prefix}: {text}"
 
 
 @router.post("/proposals/{pending_token}/confirm", response_model=None)
@@ -360,6 +391,11 @@ async def admin_confirm_proposal(
     try:
         await WorkOrderService(session).confirm(
             pending_token=pending_token, confirmer=Actor.human(user.user_id)
+        )
+    except ProposalStale as e:
+        # 提案後工單已被改狀態:未執行、提案已標 EXPIRED → 顯示在地化說明(不吐原始例外字串)
+        return _proposals_redirect(
+            "admin.prop.err.stale", wo=e.work_order_no, st=e.current_status
         )
     except (WorkOrderError, AuthorizationError, InventoryError) as e:
         # update_item 提案在 confirm 時走 _update_item_impl,可能拋 InventoryError

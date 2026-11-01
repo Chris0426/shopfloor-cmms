@@ -295,6 +295,8 @@ pending_proposal(
   proposed_by     text NOT NULL,                  -- 'agent:<name>'
   idempotency_key text UNIQUE,
   status          text NOT NULL,                  -- PENDING / CONFIRMED / REJECTED / EXPIRED
+                                                  --   EXPIRED = TTL lapsed, or (confirmed_by set) the WO changed after
+                                                  --   propose so close/void can no longer apply at confirm — not executed
   expires_at      timestamptz NOT NULL,
   confirmed_by    text,                           -- 'human:<id>', filled on confirm; anonymous rejected
   created_at timestamptz, resolved_at timestamptz

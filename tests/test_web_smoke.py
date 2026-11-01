@@ -2425,6 +2425,51 @@ def test_admin_proposals_list_and_confirm(as_user, monkeypatch):
     assert calls == [("tok1", "human:jlee")]               # confirmer = 登入 admin(拒匿名)
 
 
+def test_admin_confirm_stale_proposal_friendly_message(as_user, monkeypatch):
+    """confirm 時工單已被改狀態(ProposalStale)→ 303 帶 i18n key(不吐原始例外字串);
+    提案頁依 admin 語系(en / zh-TW / vi)顯示說明 + WO 號與在地化現況,v1/v2 皆然。"""
+    from cmms.domain.work_order.service import ProposalStale
+
+    as_user["user"].role = "admin"
+
+    async def _confirm(self, *, pending_token, confirmer, at=None):
+        raise ProposalStale(
+            "proposal stale: wo 4711 is now IN_PROGRESS",
+            work_order_no=4711, current_status="IN_PROGRESS",
+        )
+
+    async def _list(self, **kw):
+        return []
+
+    async def _sweep(self, **kw):
+        return 0
+
+    monkeypatch.setattr(web_routes.WorkOrderService, "confirm", _confirm)
+    monkeypatch.setattr(web_routes.WorkOrderService, "list_proposals", _list)
+    monkeypatch.setattr(web_routes.WorkOrderService, "expire_stale_proposals", _sweep)
+    r = client.post("/admin/proposals/tok1/confirm", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc == "/admin/proposals?err=admin.prop.err.stale&wo=4711&st=IN_PROGRESS"
+    for locale in ("en", "zh-TW", "vi"):
+        as_user["user"].ui_locale = locale
+        for ui in ("v1", "v2"):
+            client.cookies.set("cmms_ui", ui)
+            try:
+                page = client.get(loc)
+            finally:
+                client.cookies.set("cmms_ui", "v1")  # 還原模組預設(見檔頭 client)
+            assert page.status_code == 200
+            assert i18n.translate("admin.prop.err.stale", locale) in page.text, (locale, ui)
+            assert "WO-4711 (" + i18n.translate("status.IN_PROGRESS", locale) + ")" in page.text
+            assert "proposal stale" not in page.text  # 原始例外字串不外露
+    # 非白名單 status 不回顯;非 admin.prop.err.* 的 err 照舊原字串
+    as_user["user"].ui_locale = "en"
+    page = client.get("/admin/proposals?err=admin.prop.err.stale&wo=1&st=%3Cb%3Ex")
+    assert "WO-1: " in page.text and "&lt;b&gt;x" not in page.text
+    assert "boom" in client.get("/admin/proposals?err=boom").text
+
+
 def test_admin_proposals_forbids_engineer(as_user):
     r = client.get("/admin/proposals")                        # 預設 engineer
     assert r.status_code == 403

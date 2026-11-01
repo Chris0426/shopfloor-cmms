@@ -141,6 +141,31 @@ class InvalidTransition(WorkOrderError):
     """不合法的狀態轉移。"""
 
 
+class ProposalStale(InvalidTransition):
+    """提案的前提在 confirm 當下已不成立(提案後工單被重開 / 暫停 / 已結案 / 已作廢…)。
+
+    confirm 拋出本例外時:**未執行**提案操作,且提案已在獨立交易標為 EXPIRED
+    (`confirmed_by` = 嘗試確認的 admin,藉此與 TTL 逾期區分)。繼承 InvalidTransition,
+    既有只接 WorkOrderError 的呼叫端(MCP)行為不變;web 端據 `work_order_no` /
+    `current_status` 顯示在地化說明。
+    """
+
+    def __init__(
+        self, message: str, *, work_order_no: int | None, current_status: str | None
+    ) -> None:
+        super().__init__(message)
+        self.work_order_no = work_order_no
+        self.current_status = current_status
+
+
+# 工單類提案 → confirm 時該單必須仍可轉入的目標狀態(提案到 confirm 之間工單可能被改,
+# confirm 前依 ALLOWED_TRANSITIONS 重驗;open_work_order / update_item 不在此列)。
+PROPOSAL_TARGET_STATUS: dict[str, str] = {
+    "close_work_order": "CLOSED",
+    "void_work_order": "VOIDED",
+}
+
+
 class PartIssueOutcome(StrEnum):
     """`backfill_part_issue` 的結果(loader 據此計數;FK 落空非錯誤,不 raise)。"""
 
@@ -2284,7 +2309,9 @@ class WorkOrderService(DomainService):
         的 **admin**,在 domain 強制 —— `/mcp` 上公網後(commit 8d9d811),持 scoped token 者
         不得自行確認自己的提案;自報 human id 不等於審核權(對齊 ADR-016/ADR-027「agent 不能
         自我確認」)。峰會裁決「confirm 回家做」後,PROPOSABLE_OPS(開/結工單)亦一律 admin,
-        不再豁免——無現存消費者依賴舊的「Profile A 免 admin」路徑。"""
+        不再豁免——無現存消費者依賴舊的「Profile A 免 admin」路徑。
+        ③ 工單類提案(close/void)confirm 前重驗該單現況仍可轉入目標狀態;不成立 → 不執行、
+        提案標 EXPIRED、拋 ProposalStale(見 `_assert_proposal_still_applicable`)。"""
         if not confirmer.is_human():
             raise WorkOrderError(
                 "confirm requires a verified human:<id> (anonymous/agent rejected)"
@@ -2301,6 +2328,7 @@ class WorkOrderService(DomainService):
                 proposal.resolved_at = now
             raise WorkOrderError("proposal expired")
         await assert_active_admin(self.session, confirmer)  # 所有 confirm 一律驗 admin
+        await self._assert_proposal_still_applicable(proposal, confirmer, now)
         async with self.write(confirmer):
             wo = await self._execute_proposed(
                 proposal.operation, dict(proposal.params), confirmer, at=now
@@ -2310,6 +2338,45 @@ class WorkOrderService(DomainService):
             proposal.resolved_at = now
             await self.session.flush()
         return wo
+
+    async def _assert_proposal_still_applicable(
+        self, proposal: PendingProposal, confirmer: Actor, now: datetime
+    ) -> None:
+        """confirm 前重驗工單類提案的前提:該單目前仍可轉入提案的目標狀態。
+
+        提案(propose 時已驗過)到 confirm 之間工單可能被重開 / 暫停 / 結案 / 作廢。不成立 →
+        **不執行**,在獨立交易把提案標 EXPIRED(終態;`confirmed_by` 記嘗試確認的 admin,
+        與 TTL 逾期〔confirmed_by 為 NULL〕區分)後拋 ProposalStale。不就地留 PENDING:
+        dry-run diff 已與現況不符,日後工單再回到可轉狀態時也不該沿用這份舊審核依據。
+
+        工單列以 `FOR UPDATE` 讀取並刷新(populate_existing):鎖持有到 confirm 的 write()
+        交易結束,檢查與執行之間不會被其他交易改掉狀態。
+        """
+        target = PROPOSAL_TARGET_STATUS.get(proposal.operation)
+        if target is None:
+            return
+        wo_no = proposal.params.get("work_order_no")
+        wo = None
+        if wo_no is not None:
+            wo = await self.session.scalar(
+                select(WorkOrder)
+                .where(WorkOrder.work_order_no == wo_no)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        current = wo.status if wo is not None else None
+        if current is not None and target in ALLOWED_TRANSITIONS.get(current, set()):
+            return
+        async with self.write(confirmer):  # 標記要活過 raise → 獨立交易先 commit(同逾期)
+            proposal.status = "EXPIRED"
+            proposal.confirmed_by = confirmer.value
+            proposal.resolved_at = now
+        raise ProposalStale(
+            f"proposal stale: wo {wo_no} is now {current or 'missing'}, "
+            f"-> {target} no longer allowed; not applied, proposal marked EXPIRED",
+            work_order_no=wo_no,
+            current_status=current,
+        )
 
     async def reject(self, *, pending_token: str, by: Actor, at: datetime | None = None) -> None:
         """丟棄提案(不執行)。低風險(只把 PENDING → REJECTED),故不強制 admin;但**拒匿名/agent**

@@ -307,6 +307,95 @@ async def test_confirm_close_via_two_phase(session) -> None:
 # ---- ADR-017 on-box ----
 
 
+async def test_confirm_close_stale_after_reopen(session) -> None:
+    """提案後工單被重開(COMPLETED→IN_PROGRESS,另一個 session 改的):confirm 不執行、
+    拋 ProposalStale、提案落 EXPIRED(confirmed_by=嘗試確認的 admin);之後不可再 confirm。"""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from cmms.domain.work_order.models import PendingProposal, WorkOrder
+    from cmms.domain.work_order.service import InvalidTransition, ProposalStale
+
+    svc = WorkOrderService(session)
+    await _seed_admin(session)
+    bob = Actor.human("bob")
+    wo = await svc.open_work_order(asset_id="EID-001", work_type="REACTIVE", actor=bob, at=_ts(9))
+    no = wo.work_order_no
+    await svc.start_work(no, bob, at=_ts(9, 30))
+    await svc.complete_work(no, bob, at=_ts(10))
+    p = await svc.propose(
+        operation="close_work_order", params={"work_order_no": no},
+        proposed_by=Actor.agent("analytics"), at=_ts(10, 1),
+    )
+    # 另一個 session 重開工單:本 session identity map 仍是 COMPLETED → 驗 confirm 重讀現況
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as other:
+        await WorkOrderService(other).resume_work(no, bob, at=_ts(10, 10))
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(
+            pending_token=p.pending_token, confirmer=Actor.human("alice"), at=_ts(10, 30)
+        )
+    assert isinstance(ei.value, InvalidTransition)  # 既有只接 WorkOrderError 的呼叫端不受影響
+    assert ei.value.work_order_no == no and ei.value.current_status == "IN_PROGRESS"
+    # 以新 session 讀:EXPIRED 標記已落庫(活過 raise,不隨交易回滾)
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as fresh:
+        pp = await fresh.get(PendingProposal, p.pending_token)
+        assert pp.status == "EXPIRED" and pp.confirmed_by == "human:alice"
+        assert pp.resolved_at is not None
+        assert (await fresh.get(WorkOrder, no)).status == "IN_PROGRESS"
+    cur = await session.get(WorkOrder, no)
+    assert cur.status == "IN_PROGRESS"  # 未被結案
+    with pytest.raises(WorkOrderError, match="not pending"):
+        await svc.confirm(
+            pending_token=p.pending_token, confirmer=Actor.human("alice"), at=_ts(10, 31)
+        )
+
+
+async def test_confirm_void_stale_after_complete(session) -> None:
+    """請求作廢提案後工單已完工(COMPLETED 不可作廢):confirm 同樣不執行、提案 EXPIRED。"""
+    from cmms.domain.work_order.models import PendingProposal, WorkOrder
+    from cmms.domain.work_order.service import ProposalStale
+
+    svc = WorkOrderService(session)
+    await _seed_admin(session)
+    bob = Actor.human("bob")
+    wo = await svc.open_work_order(asset_id="EID-001", work_type="REACTIVE", actor=bob, at=_ts(9))
+    no = wo.work_order_no
+    p = await svc.propose(
+        operation="void_work_order", params={"work_order_no": no, "reason": "dup"},
+        proposed_by=bob, at=_ts(9, 5),
+    )
+    await svc.start_work(no, bob, at=_ts(9, 30))
+    await svc.complete_work(no, bob, at=_ts(10))
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(
+            pending_token=p.pending_token, confirmer=Actor.human("alice"), at=_ts(10, 30)
+        )
+    assert ei.value.current_status == "COMPLETED"
+    pp = await session.get(PendingProposal, p.pending_token)
+    assert pp.status == "EXPIRED" and pp.confirmed_by == "human:alice"
+    assert (await session.get(WorkOrder, no)).status == "COMPLETED"
+
+
+async def test_confirm_close_still_valid_unaffected(session) -> None:
+    """重驗不誤擋:提案後工單被重開又再完工(回到 COMPLETED)→ 仍可 confirm 結案。"""
+    svc = WorkOrderService(session)
+    await _seed_admin(session)
+    bob = Actor.human("bob")
+    wo = await svc.open_work_order(asset_id="EID-001", work_type="REACTIVE", actor=bob, at=_ts(9))
+    no = wo.work_order_no
+    await svc.start_work(no, bob, at=_ts(9, 30))
+    await svc.complete_work(no, bob, at=_ts(10))
+    p = await svc.propose(
+        operation="close_work_order", params={"work_order_no": no},
+        proposed_by=Actor.agent("analytics"), at=_ts(10, 1),
+    )
+    await svc.resume_work(no, bob, at=_ts(10, 10))
+    await svc.complete_work(no, bob, at=_ts(10, 20))
+    closed = await svc.confirm(
+        pending_token=p.pending_token, confirmer=Actor.human("alice"), at=_ts(10, 30)
+    )
+    assert closed.status == "CLOSED"
+
+
 async def test_onbox_open_and_idempotent(session) -> None:
     svc = WorkOrderService(session)
     wo = await svc.open_reactive_work_order_onbox(
