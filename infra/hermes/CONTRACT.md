@@ -115,6 +115,8 @@ consumed tokens are still recorded in the ledger as `error` and still count agai
   opened each is the string `"unavailable"`.
 - `questions` is today's (UTC) per-source question count summed per target, plus the number of
   distinct sources; it never exposes a source key or hash.
+  For a human-readable summary on the host, run `scripts/hermes_usage.py` (read-only, stdlib only;
+  see infra/hermes/README.md).
 - `url` is exposed unauthenticated: keep `/health` on the private network.
 
 ## 6. Limits and budgets
