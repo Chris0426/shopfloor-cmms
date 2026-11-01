@@ -53,8 +53,8 @@ STORY_ASSET = "EID-97061"  # UV Oven #1(generate_demo_data.py 的第 61 台)
 OPERATOR = "operator.a"
 ENGINEER = "jordan.lee"
 ADMIN = "admin"
-# 負責人顯示名(= jordan.lee 帳號的 emaint-assignee)。EID-97061 不在
-# assign_demo_owners.py 的 60 台內,沒有設備負責人可衍生,所以開單時明確指派。
+# 負責人顯示名(= jordan.lee 帳號的 emaint-assignee)。assign_demo_owners.py 也會把
+# EID-97061 指給 Jordan Lee,但它在 sentinel 內、已 seed 過的庫不會重跑,所以開單時仍明確指派。
 ENGINEER_NAME = "Jordan Lee"
 
 
