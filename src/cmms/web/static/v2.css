@@ -208,6 +208,8 @@ svg.icon-sm { width: 18px; height: 18px; flex: 0 0 auto; }
 body:has(.demo-banner) { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
 body:has(.demo-banner) > .shell { flex: 1 0 auto; min-height: 0; }
 body:has(.demo-banner) > .shell > .app { min-height: 0; }
+/* 手機橫幅高度不固定,admin 頂列沒法精準停在它下方 ⇒ 橫幅隨頁捲走,頂列照舊 top:0 */
+body.admin .demo-banner { position: static; }
 .page { flex: 1 1 auto; min-width: 0; padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
 .sidebar { display: none; }
 
@@ -526,6 +528,9 @@ svg.icon-xs { width: 12px; height: 12px; flex: 0 0 auto; }
   body:has(.demo-banner) { display: block; min-height: 0; }
   body:has(.demo-banner) > .shell { min-height: calc(100vh - var(--demo-banner-h, 0px)); min-height: calc(100dvh - var(--demo-banner-h, 0px)); }
   body:has(.demo-banner) > .shell > .app { min-height: calc(100vh - var(--demo-banner-h, 0px)); min-height: calc(100dvh - var(--demo-banner-h, 0px)); }
+  /* 桌面橫幅固定 40px 且 sticky:admin 頂列停在橫幅下緣,否則被橫幅蓋住 */
+  body.admin .demo-banner { position: sticky; }
+  body:has(.demo-banner) .adm-top { top: var(--demo-banner-h, 0px); }
 }
 
 /* 按鈕補兩種:危險(描邊紅, 紅只給擋下 / 危險)與整列寬 */
