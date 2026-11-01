@@ -30,6 +30,11 @@ $OpsUser   = "operator.a";  $OpsPass   = "demo1234"
 
 function Cmms { & $Py -m cmms.cli.main @args }
 
+if (-not $env:CMMS_DATABASE_URL) {
+    Write-Host "CMMS_DATABASE_URL is not set (e.g. postgresql+asyncpg://cmms:cmms@localhost:5432/cmms)"
+    exit 1
+}
+
 Write-Host "==> 1/5 database migrations"
 if ($env:SKIP_MIGRATE -ne "1") { & $Py -m alembic upgrade head } else { Write-Host "    (skipped)" }
 
@@ -71,14 +76,17 @@ if ($adminCreated -or $env:SEED_FORCE -eq "1") {
     Cmms wo-transition $woA start --user $EngUser
     Cmms wo-issue-part $woA EC900002 2 --user $EngUser
     Cmms wo-transition $woA complete --user $EngUser
+    Write-Host "    WO ${woA}: COMPLETED, 2 x EC900002 issued"
 
     $woB = (Cmms wo-open EID-97004 REACTIVE --user $EngUser `
         --brief "Dispenser-01 tip clogged, no dispense on head 2").Split(" ")[2]
     Cmms wo-transition $woB start --user $EngUser
     Cmms wo-transition $woB hold --hold-reason WAITING_PARTS --user $EngUser
+    Write-Host "    WO ${woB}: ON_HOLD (WAITING_PARTS)"
 
-    Cmms wo-open EID-97007 REACTIVE --user $OpsUser `
-        --brief "Oven-01 temperature out of range, alarm at 07:40"
+    $woC = (Cmms wo-open EID-97007 REACTIVE --user $OpsUser `
+        --brief "Oven-01 temperature out of range, alarm at 07:40").Split(" ")[2]
+    Write-Host "    WO ${woC}: OPEN (reported by the line operator)"
 
     Cmms pm-generate-due --limit 12
 
@@ -104,9 +112,13 @@ Write-Host ""
 Write-Host "============================================================"
 Write-Host "  Demo ready:  http://localhost:8000"
 Write-Host "------------------------------------------------------------"
-Write-Host "  admin      $AdminUser / $AdminPass"
-Write-Host "  engineer   $EngUser / $EngPass"
-Write-Host "  operator   $OpsUser / $OpsPass"
+Write-Host "  admin       $AdminUser / $AdminPass      (full access, /admin)"
+Write-Host "  engineer    $EngUser / $EngPass   (day-to-day maintenance)"
+Write-Host "  operator    $OpsUser / $OpsPass   (may only report + cancel)"
+Write-Host ""
+Write-Host "  Read-API bearer token: demo-read-api-token-not-a-secret"
+Write-Host '      curl.exe -H "Authorization: Bearer demo-read-api-token-not-a-secret" `'
+Write-Host "           http://localhost:8000/work-orders"
 Write-Host ""
 Write-Host "  All data is synthetic. All credentials are throwaway."
 Write-Host "============================================================"
