@@ -203,6 +203,11 @@ svg.icon-sm { width: 18px; height: 18px; flex: 0 0 auto; }
 /* ---- 4. 版面:手機優先;≥900px 三欄(側欄 / 主欄 / dock) ---- */
 .shell { min-height: 100vh; }
 .app { min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
+/* 示範橫幅在 .shell 之上佔位:min-height 不扣掉它,內容短時頁面會多捲一個橫幅高度。
+   手機橫幅可折行(高度不固定)⇒ body 改成直欄 flex,.shell 吃剩餘高度;桌面見下方 --demo-banner-h。 */
+body:has(.demo-banner) { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+body:has(.demo-banner) > .shell { flex: 1 0 auto; min-height: 0; }
+body:has(.demo-banner) > .shell > .app { min-height: 0; }
 .page { flex: 1 1 auto; min-width: 0; padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
 .sidebar { display: none; }
 
@@ -517,6 +522,10 @@ svg.icon-xs { width: 12px; height: 12px; flex: 0 0 auto; }
     box-sizing: border-box; height: var(--demo-banner-h, 40px);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  /* 桌面 .shell 是 grid + margin auto,不走直欄 flex:改用固定橫幅高度扣掉 */
+  body:has(.demo-banner) { display: block; min-height: 0; }
+  body:has(.demo-banner) > .shell { min-height: calc(100vh - var(--demo-banner-h, 0px)); min-height: calc(100dvh - var(--demo-banner-h, 0px)); }
+  body:has(.demo-banner) > .shell > .app { min-height: calc(100vh - var(--demo-banner-h, 0px)); min-height: calc(100dvh - var(--demo-banner-h, 0px)); }
 }
 
 /* 按鈕補兩種:危險(描邊紅, 紅只給擋下 / 危險)與整列寬 */
