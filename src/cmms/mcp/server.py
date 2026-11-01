@@ -296,7 +296,10 @@ async def list_work_orders(
     使用者說 open / outstanding / not yet closed 通常指 active(OPEN / IN_PROGRESS / ON_HOLD),
     用 `active=True` 一次撈齊;只有明確指定單一狀態時才用 `status`。
     `active=True` 與 `status` 同時給時以 `status` 為準(單一狀態比群組更具體)。
-    work_type 為原系統代碼(如 REACTIVE、PM),照原樣精確比對。
+    work_type 為原系統代碼,照原樣精確比對(含空白與大小寫)。原系統共 8 類:
+    REACTIVE(報修)/ PM(預防保養)/ ON HALT / PART REQUEST / CONVERSION /
+    PROACTIVE / CORRECTIVE / DELAY(ON HALT、DELAY 語意未確認)。
+    本實例只有匯入資料裡出現過的代碼;合成示範資料只有 REACTIVE 與 PM。
     """
     # 工具邊界正規化:DB 狀態碼是大寫,LLM 常傳小寫;service 層保持精確比對、不改
     status = (status or "").strip().upper() or None
@@ -377,7 +380,13 @@ async def propose_open_work_order(
     proposed_by: str = "analytics",
     idempotency_key: str | None = None,
 ) -> dict[str, Any]:
-    """提案開立工單(ADR-016)。回 pending_token + dry-run diff;需人類 confirm 才執行。"""
+    """提案開立工單(ADR-016)。回 pending_token + dry-run diff;需人類 confirm 才執行。
+
+    work_type 為原系統代碼,照原樣精確比對;必須是本實例 work_type 表已有的代碼
+    (只含匯入資料出現過的,合成示範資料只有 REACTIVE 與 PM),否則失敗。報修用 REACTIVE。
+    原系統共 8 類:REACTIVE / PM / ON HALT / PART REQUEST / CONVERSION / PROACTIVE /
+    CORRECTIVE / DELAY(ON HALT、DELAY 語意未確認)。
+    """
     from cmms.audit import Actor
 
     async with get_sessionmaker()() as session:
