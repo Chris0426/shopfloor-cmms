@@ -27,6 +27,10 @@ ADMIN = Actor.human("admin")
 # healthy share of the fleet (including the three machines the live scenario uses).
 OWNERS = ["Jordan Lee", "Sam Wu", "Alice Fang", "Ben Yeh", "Cara Lo"]
 
+# EID-97001 .. EID-97061:60 台生成資產 + 影片故事資產 UV Oven #1(見 generate_demo_data.py)。
+# 資產在 seed_demo.sh 3/5 已載入,所以排在 4/5 的本腳本涵蓋得到 97061,不需調整順序。
+ASSET_COUNT = 61
+
 
 def owners_for(index: int) -> list[str]:
     """Owner list for asset #index (EID-97001 + index). Every 7th machine is shared."""
@@ -42,7 +46,7 @@ async def main() -> None:
     assigned = 0
     async with get_sessionmaker()() as session:
         svc = AssetService(session)
-        for i in range(60):  # EID-97001 .. EID-97060 (see generate_demo_data.py)
+        for i in range(ASSET_COUNT):
             await svc.set_owners(f"EID-{97001 + i:05d}", owners_for(i), ADMIN)
             assigned += 1
     print(f"assigned owners on {assigned} assets")
