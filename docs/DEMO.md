@@ -69,6 +69,13 @@ seeded ones are worth opening:
   down; waiting for a *production window* means the machine is still making product, and
   that time is not downtime. This is the distinction the legacy system got wrong.
 
+The story work orders (**EID-97061**, **WO 96320 / 96321**, from `scripts/seed_demo_story.py`)
+are **forward-only**. If anything outside the story has changed them — a visitor or agent
+closed, held or annotated WO 96321 — and the seed is re-run without wiping the database, it
+fails with `story_diverged` rather than silently replaying nothing. The fix is a full
+database reset: `scripts/demo_reset.sh`, or `docker compose down -v` and then seed again. The
+timed reset already wipes the database, so the public site is unaffected.
+
 Open any closed work order to see the reconstructed timeline, the diagnosis and the
 calculated downtime.
 
