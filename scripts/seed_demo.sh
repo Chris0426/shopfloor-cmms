@@ -32,6 +32,12 @@
 #                       (ISO, naive = Asia/Taipei); empty = the whole story
 set -euo pipefail
 
+# 與 seed_demo.ps1 一致:沒設資料庫連線就先停,別讓後面的 alembic / cmms 報一長串連線錯誤。
+[ -n "${CMMS_DATABASE_URL:-}" ] || {
+  echo "CMMS_DATABASE_URL is not set (e.g. postgresql+asyncpg://cmms:cmms@localhost:5432/cmms)" >&2
+  exit 1
+}
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
