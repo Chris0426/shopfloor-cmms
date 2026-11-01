@@ -186,6 +186,7 @@ class ProposalStale(InvalidTransition):
 # - item_missing:update_item 的品項不在主檔
 # - bin_unavailable:update_item 提案中的儲位已非 active storage_bin(且不等於品項現值)
 # - supplier_unknown:update_item 提案中的 supplier 已對不上任何既存 organization / supplier 值
+# - reason_code_retired:close_work_order 提案帶的 efc 真因碼已退役(is_active=false)或已不存在
 STALE_REASONS = frozenset(
     {
         "wo_status",
@@ -194,6 +195,7 @@ STALE_REASONS = frozenset(
         "item_missing",
         "bin_unavailable",
         "supplier_unknown",
+        "reason_code_retired",
     }
 )
 
@@ -2446,7 +2448,8 @@ class WorkOrderService(DomainService):
         """回 confirm 當下已不成立的前提(ProposalStale,尚未 raise);皆成立回 None。
 
         只驗執行路徑實際會擋、且提案後可能改變的前提:
-        - close/void:工單仍可轉入目標狀態(ALLOWED_TRANSITIONS)。
+        - close/void:工單仍可轉入目標狀態(ALLOWED_TRANSITIONS);close 帶的 efc 真因碼仍
+          存在且 is_active(提案後可被退役)。
         - open_work_order:設備仍在主檔(FK);REACTIVE 另須在冊(is_active,同 `_open_impl`)。
         - update_item:品項仍在主檔;提案中的儲位 / supplier 仍通過 `_update_item_impl` 的同一
           驗證(儲位可被停用、organization 可被改名)。
@@ -2470,6 +2473,23 @@ class WorkOrderService(DomainService):
                 )
             current = wo.status if wo is not None else None
             if current is not None and target in ALLOWED_TRANSITIONS.get(current, set()):
+                # close 提案的 efc 真因碼:鎖序 工單列(上方 FOR UPDATE)→ efc 碼列(FOR SHARE;
+                # 擋退役 UPDATE、不擋讀取與 FK KEY SHARE),鎖到 confirm 的 write() 交易結束
+                reason_code = (params.get("confirmed_reason_code") or "").strip()
+                if op == "close_work_order" and reason_code:
+                    efc = await self.session.scalar(
+                        select(EquipmentFailureCode)
+                        .where(EquipmentFailureCode.code == reason_code)
+                        .with_for_update(read=True)
+                        .execution_options(populate_existing=True)
+                    )
+                    if efc is None or not efc.is_active:
+                        return ProposalStale(
+                            f"proposal stale: equipment failure code {reason_code!r} is "
+                            "retired; not applied, proposal marked EXPIRED",
+                            reason="reason_code_retired",
+                            subject=reason_code,
+                        )
                 return None
             return ProposalStale(
                 f"proposal stale: wo {wo_no} is now {current or 'missing'}, "

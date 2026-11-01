@@ -864,6 +864,46 @@ async def test_propose_confirm_close_with_confirmed_reason(session) -> None:
     assert closed.status == "CLOSED" and closed.confirmed_reason_code == "eqfHeadCrash"
 
 
+async def test_confirm_close_stale_after_reason_code_retired(session) -> None:
+    """close 提案帶的 efc 真因碼在提案後被退役(另一個 session):confirm 不結案、拋
+    ProposalStale(reason_code_retired, subject=code)、提案 EXPIRED 且原因落庫。"""
+    from sqlalchemy import update
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from cmms.domain.failure_vocab.models import EquipmentFailureCode
+    from cmms.domain.work_order.models import WorkOrder
+    from cmms.domain.work_order.service import ProposalStale
+
+    svc = WorkOrderService(session)
+    admin = await _seed_admin(session)
+    session.add(EquipmentFailureCode(code="eqfHeadCrash", is_active=True))
+    await session.flush()
+    wo = await svc.open_work_order(asset_id="EID-001", work_type="REACTIVE", actor=admin, at=_ts(9))
+    no = wo.work_order_no
+    await svc.start_work(no, admin, at=_ts(10))
+    await svc.complete_work(no, admin, at=_ts(11))
+    p = await svc.propose(
+        operation="close_work_order",
+        params={"work_order_no": no, "confirmed_reason_code": "eqfHeadCrash"},
+        proposed_by=Actor.agent("analytics"), at=_ts(11, 30),
+    )
+    await session.commit()  # 讓另一個 session 看得到碼列
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as other:
+        await other.execute(
+            update(EquipmentFailureCode)
+            .where(EquipmentFailureCode.code == "eqfHeadCrash")
+            .values(is_active=False)
+        )
+        await other.commit()
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(pending_token=p.pending_token, confirmer=admin, at=_ts(12))
+    assert ei.value.reason == "reason_code_retired" and ei.value.subject == "eqfHeadCrash"
+    await _assert_expired_stale(session, p.pending_token, "reason_code_retired", "eqfHeadCrash")
+    assert (await session.get(WorkOrder, no)).status == "COMPLETED"  # 未結案
+    with pytest.raises(WorkOrderError, match="not pending"):
+        await svc.confirm(pending_token=p.pending_token, confirmer=admin, at=_ts(12, 1))
+
+
 # ---- propose 端壞值驗證:拋 WorkOrderError、不建提案列 ----
 
 

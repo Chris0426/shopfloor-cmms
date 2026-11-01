@@ -2479,6 +2479,7 @@ def test_admin_confirm_stale_proposal_friendly_message(as_user, monkeypatch):
         ("item_missing", "ES900"),
         ("bin_unavailable", "ES900"),
         ("supplier_unknown", "ES900"),
+        ("reason_code_retired", "eqfHeadCrash"),
     ],
 )
 def test_admin_confirm_stale_asset_item_friendly_message(as_user, monkeypatch, reason, subject):
@@ -4829,6 +4830,8 @@ def test_my_proposals_expired_reason(as_user, monkeypatch):
         "bin": [_row("e", status="EXPIRED", confirmed_by="human:alice",
                      diff=_stale("bin_unavailable", subject="ES900"), op="update_item",
                      params={"item_code": "ES900"})],
+        "efc": [_row("g", status="EXPIRED", confirmed_by="human:alice",
+                     diff=_stale("reason_code_retired", subject="eqfHeadCrash"))],
         "legacy": [_row("f", status="EXPIRED", confirmed_by="human:alice",
                         diff={"action": "close_work_order"})],
     }
@@ -4869,6 +4872,8 @@ def test_my_proposals_expired_reason(as_user, monkeypatch):
             assert "EID-001: " + tr("myprop.expired.asset_retired", loc) in page, loc
         for page in _pages("bin", loc):
             assert tr("myprop.expired.bin_unavailable", loc) in page, loc
+        for page in _pages("efc", loc):
+            assert "eqfHeadCrash: " + tr("myprop.expired.reason_code_retired", loc) in page, loc
         for page in _pages("legacy", loc):
             assert tr("myprop.expired.stale", loc) in page, loc
 

@@ -3280,7 +3280,9 @@ def _proposal_expiry_note(p, now: datetime, locale: str) -> str | None:
             if cs and f"status.{cs}" in CATALOG[DEFAULT_LOCALE]:
                 now_label = translate("myprop.expired.now", locale)
                 text += f" ({now_label} {translate(f'status.{cs}', locale)})"
-        elif reason.startswith("asset_") and stale.get("subject"):
+        elif (reason.startswith("asset_") or reason == "reason_code_retired") and stale.get(
+            "subject"
+        ):
             text = f"{stale['subject']}: {text}"
         return text
     if p.status == "EXPIRED" or (p.status == "PENDING" and p.expires_at <= now):

@@ -362,6 +362,9 @@ CATALOG: dict[str, dict[str, str]] = {
             "Not applied: the proposed supplier no longer matches a known supplier"
             " (it may have been renamed)."
         ),
+        "myprop.expired.reason_code_retired": (
+            "Not applied: the failure reason code was retired before approval."
+        ),
         "report.scan": "Scan barcode",
         "eq.parts": "Parts used",
         "eq.parts_direct": "Direct issue",
@@ -657,6 +660,11 @@ CATALOG: dict[str, dict[str, str]] = {
             "The supplier in this proposal no longer matches any known supplier (it may have"
             " been renamed), so the item edit was not applied. The proposal has been marked"
             " expired — submit a new proposal if it is still needed."
+        ),
+        "admin.prop.err.stale.reason_code_retired": (
+            "The failure reason code in this proposal was retired since it was made, so the"
+            " work order was not closed. The proposal has been marked expired — submit a new"
+            " proposal with an active code (or none) if it is still needed."
         ),
         "admin.prop.raw": "Raw params",
         "admin.prop.sources": (
@@ -1439,6 +1447,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "myprop.expired.item_missing": "未執行:品項已不在品項主檔中。",
         "myprop.expired.bin_unavailable": "未執行:核准前提案中的儲位已停用。",
         "myprop.expired.supplier_unknown": "未執行:提案中的供應商已對不上既有供應商(可能已更名)。",
+        "myprop.expired.reason_code_retired": "未執行:核准前提案中的故障真因碼已退役。",
         "report.scan": "掃描條碼",
         "eq.parts": "用料紀錄",
         "eq.parts_direct": "直領",
@@ -1680,6 +1689,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "admin.prop.err.stale.supplier_unknown": (
             "提案中的供應商已對不上任何既有供應商(可能已更名),品項修改未執行;"
             "提案已標為逾期失效。如仍需要,請重新提案。"
+        ),
+        "admin.prop.err.stale.reason_code_retired": (
+            "提案中的故障真因碼在提案送出後已退役,工單未結案;提案已標為逾期失效。"
+            "如仍需要,請改用啟用中的真因碼(或不填)重新提案。"
         ),
         "admin.prop.raw": "原始參數",
         "admin.prop.sources": "提案來源:工程師(工單頁「請求作廢」)與 agent(MCP)。",
@@ -2435,6 +2448,9 @@ CATALOG: dict[str, dict[str, str]] = {
             "Không thực hiện: nhà cung cấp được đề xuất không còn khớp với nhà cung cấp nào"
             " (có thể đã đổi tên)."
         ),
+        "myprop.expired.reason_code_retired": (
+            "Không thực hiện: mã nguyên nhân hỏng đã bị ngừng sử dụng trước khi được duyệt."
+        ),
         "report.scan": "Quét mã vạch",
         "eq.parts": "Linh kiện đã dùng",
         "eq.parts_direct": "Xuất trực tiếp",
@@ -2709,6 +2725,11 @@ CATALOG: dict[str, dict[str, str]] = {
             "Nhà cung cấp trong đề xuất không còn khớp với nhà cung cấp nào (có thể đã đổi"
             " tên), nên chỉnh sửa vật tư không được thực hiện. Đề xuất đã được đánh dấu hết hạn"
             " — hãy gửi đề xuất mới nếu vẫn cần."
+        ),
+        "admin.prop.err.stale.reason_code_retired": (
+            "Mã nguyên nhân hỏng trong đề xuất đã bị ngừng sử dụng sau khi đề xuất được tạo, nên"
+            " đơn công việc không được đóng. Đề xuất đã được đánh dấu hết hạn — hãy gửi đề xuất"
+            " mới với mã đang hoạt động (hoặc không có mã) nếu vẫn cần."
         ),
         "admin.prop.raw": "Tham số gốc",
         "admin.prop.sources": "Đề xuất đến từ kỹ sư (yêu cầu vô hiệu trên đơn) và agent (MCP).",
