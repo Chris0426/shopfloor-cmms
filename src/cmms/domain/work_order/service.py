@@ -2351,7 +2351,9 @@ class WorkOrderService(DomainService):
         不再豁免——無現存消費者依賴舊的「Profile A 免 admin」路徑。
         ③ confirm 前重驗提案前提(close/void:工單仍可轉入目標狀態;open:設備在冊;
         update_item:品項 / 儲位 / supplier 仍有效);不成立 → 不執行、提案標 EXPIRED、拋
-        ProposalStale(見 `_assert_proposal_still_applicable`)。"""
+        ProposalStale(見 `_assert_proposal_still_applicable`)。前提列在檢查時上鎖、鎖到執行交易
+        結束;update_item 未上鎖的備援依據若在其間失效,執行失敗後重驗並同樣轉 ProposalStale
+        (見 `_expire_if_stale_after_failure`)。"""
         if not confirmer.is_human():
             raise WorkOrderError(
                 "confirm requires a verified human:<id> (anonymous/agent rejected)"
@@ -2369,15 +2371,40 @@ class WorkOrderService(DomainService):
             raise WorkOrderError("proposal expired")
         await assert_active_admin(self.session, confirmer)  # 所有 confirm 一律驗 admin
         await self._assert_proposal_still_applicable(proposal, confirmer, now)
-        async with self.write(confirmer):
-            wo = await self._execute_proposed(
-                proposal.operation, dict(proposal.params), confirmer, at=now
-            )
-            proposal.status = "CONFIRMED"
-            proposal.confirmed_by = confirmer.value
-            proposal.resolved_at = now
-            await self.session.flush()
+        operation = proposal.operation
+        try:
+            async with self.write(confirmer):
+                wo = await self._execute_proposed(
+                    operation, dict(proposal.params), confirmer, at=now
+                )
+                proposal.status = "CONFIRMED"
+                proposal.confirmed_by = confirmer.value
+                proposal.resolved_at = now
+                await self.session.flush()
+        except WorkOrderError as e:
+            if operation == "update_item" and isinstance(e.__cause__, InventoryError):
+                await self._expire_if_stale_after_failure(proposal, confirmer, now)
+            raise
         return wo
+
+    async def _expire_if_stale_after_failure(
+        self, proposal: PendingProposal, confirmer: Actor, now: datetime
+    ) -> None:
+        """執行失敗(交易已回滾)後重驗前提:若前提已不成立 → 標 EXPIRED 並拋 ProposalStale;
+        否則不動(呼叫端照常拋原錯)。
+
+        update_item 的 supplier 若只靠「其他品項的 supplier 現值」對上(未上鎖,見
+        `InventoryService._lock_item_references`),該品項可能在前提檢查後、執行前被改掉 → 執行端
+        的同一驗證拒絕。以重驗分類(不比對錯誤字串):前提真的失效才轉 ProposalStale,其餘維持原錯。
+        """
+        await self.session.refresh(proposal)  # 回滾後屬性已過期(async 不可隱式載入)
+        if proposal.status != "PENDING":
+            return
+        try:
+            await self._assert_proposal_still_applicable(proposal, confirmer, now)
+        finally:
+            if self.session.in_transaction():
+                await self.session.rollback()  # 前提仍成立:釋放重驗取得的鎖
 
     async def _assert_proposal_still_applicable(
         self, proposal: PendingProposal, confirmer: Actor, now: datetime
@@ -2411,7 +2438,8 @@ class WorkOrderService(DomainService):
           驗證(儲位可被停用、organization 可被改名)。
 
         有實體列者以 `FOR UPDATE` 讀取並刷新(populate_existing):鎖持有到 confirm 的 write()
-        交易結束,檢查與執行之間不會被其他交易改掉(例:退役設備、改工單狀態)。
+        交易結束,檢查與執行之間不會被其他交易改掉(例:退役設備、改工單狀態)。update_item 另對
+        儲位 / 機構列加 FOR SHARE(鎖序 品項 → 儲位 → 機構,見 `_lock_item_references`)。
         """
         params = proposal.params or {}
         op = proposal.operation
@@ -2480,6 +2508,14 @@ class WorkOrderService(DomainService):
                 )
             coerced = self._coerce_item_params(params)
             inv = InventoryService(self.session)
+            # 鎖序:品項列(上方 FOR UPDATE)→ 儲位列 → 機構列(FOR SHARE,見
+            # `_lock_item_references`);鎖到 confirm 的 write() 交易結束,下方驗證與執行時
+            # `_update_item_impl` 的同一驗證看到同一份資料。
+            await inv._lock_item_references(
+                bin_location=coerced["bin_location"],
+                supplier=coerced["supplier"],
+                current_bin=item.bin_location,
+            )
             try:
                 await inv._validate_bin_location(
                     coerced["bin_location"], current=item.bin_location

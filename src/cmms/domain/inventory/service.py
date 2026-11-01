@@ -687,6 +687,42 @@ class InventoryService(DomainService):
             item.updated_by = actor.value
             item.source_actor = actor.value
 
+    async def _lock_item_references(
+        self, *, bin_location: str | None, supplier: str | None, current_bin: str | None
+    ) -> None:
+        """提案 confirm 前,對品項編輯會驗的參照列加共享鎖(FOR SHARE),鎖到呼叫端交易結束。
+
+        鎖的是 `_validate_bin_location` / `_supplier_value_known` 的判斷依據:
+        - storage_bin:提案儲位對應的列(大小寫不敏感,**不論 active 與否**都鎖 → 停用 / 啟用都得等);
+          空值或等於品項現值(原樣放行、不查表)→ 不鎖。
+        - organization:name 對得上提案 supplier 的所有列(更名 / 停用都得等)。
+        用 FOR SHARE 而非 FOR UPDATE:只需擋住改動,不必擋其他讀者或 FK 參照檢查(KEY SHARE)。
+
+        ★ 不鎖「其他品項的 supplier 現值」這條備援依據(任意多列、且與其他 confirm 鎖品項列的順序
+        互相交錯會死鎖)—— 該依據在 confirm 執行失敗時由呼叫端重驗並標 stale(見
+        `WorkOrderService.confirm`)。
+
+        加鎖順序(呼叫端須先鎖品項列):inventory_item → storage_bin(依 code)→
+        organization(依 org_id)。所有 confirm 同序,彼此不會循環等待;儲位 / 機構的寫入路徑
+        (`set_storage_bin_active` / `update_organization` 等)各只動一列,不會反向持鎖。
+        """
+        v = (bin_location or "").strip()
+        if v and v != (current_bin or "").strip():
+            await self.session.execute(
+                select(StorageBin.code)
+                .where(func.upper(StorageBin.code) == v.upper())
+                .order_by(StorageBin.code)
+                .with_for_update(read=True)
+            )
+        low = (supplier or "").strip().lower()
+        if low:
+            await self.session.execute(
+                select(Organization.org_id)
+                .where(func.lower(Organization.name) == low)
+                .order_by(Organization.org_id)
+                .with_for_update(read=True)
+            )
+
     async def _supplier_value_known(self, supplier: str) -> bool:
         """supplier 文字是否為既存值(#7b):對得上 organization.name(不分大小寫)或既存
         inventory_item.supplier(涵蓋 legacy 未連 org 名稱 + 品項自身現值)。空 → 視為 OK(清除)。"""

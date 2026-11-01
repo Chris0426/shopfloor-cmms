@@ -589,6 +589,206 @@ async def test_confirm_update_item_bin_still_valid_unaffected(session) -> None:
     assert item.name == "Seal v2" and item.bin_location == "B-07"
     assert item.supplier == "Acme Seals"
 
+
+def _hook_before_execute(monkeypatch, hook) -> None:
+    """在 confirm 的「前提檢查之後、執行之前」(write() 交易內、鎖已取得)插入 hook。"""
+    orig = WorkOrderService._execute_proposed
+
+    async def hooked(self, *a, **k):
+        await hook()
+        return await orig(self, *a, **k)
+
+    monkeypatch.setattr(WorkOrderService, "_execute_proposed", hooked)
+
+
+async def _blocked_by_lock(session, write) -> bool:
+    """另一個 session 以 lock_timeout 嘗試寫入:撞到 confirm 持有的鎖 → True(寫入已回滾)。"""
+    from sqlalchemy import text
+    from sqlalchemy.exc import DBAPIError
+
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as other:
+        await other.execute(text("SET LOCAL lock_timeout = '300ms'"))
+        try:
+            await write(other)
+        except DBAPIError as e:
+            return "lock" in str(e).lower()
+    return False
+
+
+async def test_confirm_update_item_bin_locked_until_commit(session, monkeypatch) -> None:
+    """檢查後、執行前有人要停用提案中的儲位:被 confirm 的鎖擋住(等不到),提案照常執行;
+    confirm 交易結束後停用才落得下去 —— 檢查與執行看到同一份儲位狀態。"""
+    from cmms.domain.inventory.service import InventoryService
+    from cmms.domain.work_order.models import PendingProposal
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    await InventoryService(session).add_storage_bin("B-07", actor=alice)
+    await _seed_item(session, alice)
+    p = await svc.propose(
+        operation="update_item", params=_item_params(bin_location="b-07"),
+        proposed_by=Actor.human("eng1"), at=_ts(10),
+    )
+    blocked: list[bool] = []
+
+    async def deactivate(other):
+        await InventoryService(other).set_storage_bin_active(
+            "B-07", is_active=False, actor=alice
+        )
+
+    async def hook():
+        blocked.append(await _blocked_by_lock(session, deactivate))
+
+    _hook_before_execute(monkeypatch, hook)
+    item = await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert blocked == [True]
+    assert item.bin_location == "B-07"
+    assert (await session.get(PendingProposal, p.pending_token)).status == "CONFIRMED"
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as other:
+        await deactivate(other)  # 鎖已釋放 → 停用照常
+
+
+async def test_confirm_update_item_org_locked_until_commit(session, monkeypatch) -> None:
+    """檢查後、執行前有人要把 supplier 對應的 organization 更名:被鎖擋住,提案照常執行。"""
+    from cmms.domain.contacts.service import ContactsService
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    org = await ContactsService(session).create_organization(actor=alice, name="Acme Seals")
+    await _seed_item(session, alice)
+    p = await svc.propose(
+        operation="update_item", params=_item_params(supplier="acme seals"),
+        proposed_by=Actor.human("eng1"), at=_ts(10),
+    )
+    blocked: list[bool] = []
+
+    async def rename(other):
+        await ContactsService(other).update_organization(
+            org.org_id, actor=alice, name="Acme Sealing Co",
+            org_type=None, website=None, address=None, phone=None,
+        )
+
+    async def hook():
+        blocked.append(await _blocked_by_lock(session, rename))
+
+    _hook_before_execute(monkeypatch, hook)
+    item = await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert blocked == [True]
+    assert item.supplier == "acme seals"
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as other:
+        await rename(other)  # 鎖已釋放 → 更名照常
+
+
+async def test_confirm_update_item_supplier_witness_changed_mid_confirm(
+    session, monkeypatch
+) -> None:
+    """supplier 只靠「另一個品項的 supplier 現值」對上(無對應 org,此依據不上鎖);檢查後、執行前
+    該品項的 supplier 被清掉(另一個 session 提交):執行端拒絕 → 重驗後轉 ProposalStale
+    (supplier_unknown)、提案 EXPIRED、主檔未改,不冒原始錯誤。"""
+    from sqlalchemy import text
+
+    from cmms.domain.inventory.models import InventoryItem
+    from cmms.domain.inventory.service import InventoryService
+    from cmms.domain.work_order.service import ProposalStale
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    await _seed_item(session, alice)
+    await InventoryService(session).create_item("ES901", actor=alice, name="Gasket")
+    # legacy 未連 org 的供應商名(create_item 不收未知 supplier → 以 SQL 模擬既有資料)
+    await session.execute(
+        text("UPDATE inventory_item SET supplier = 'Old Vendor' WHERE item_code = 'ES901'")
+    )
+    await session.commit()
+    p = await svc.propose(
+        operation="update_item", params=_item_params(supplier="Old Vendor"),
+        proposed_by=Actor.human("eng1"), at=_ts(10),
+    )
+
+    async def hook():
+        async with async_sessionmaker(session.bind, expire_on_commit=False)() as other:
+            await InventoryService(other).update_item(
+                "ES901", actor=alice, name="Gasket", description=None, vendor_part_no=None,
+                bin_location=None, reorder_point=None, reorder_quantity=None,
+                lead_time_weeks=None, unit_cost=None, supplier=None, weblink=None,
+                comment=None, is_stocked=True, is_obsolete=False,
+            )
+
+    _hook_before_execute(monkeypatch, hook)
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert ei.value.reason == "supplier_unknown" and ei.value.subject == "ES900"
+    await _assert_expired_stale(session, p.pending_token, "supplier_unknown", "ES900")
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as fresh:
+        item = await fresh.get(InventoryItem, "ES900")
+        assert item.name == "Seal" and item.supplier is None
+
+
+async def test_confirm_update_item_bin_fails_at_execute_becomes_stale(
+    session, monkeypatch
+) -> None:
+    """儲位驗證在檢查時通過、執行時失敗(模擬檢查與寫入之間儲位失效):轉 ProposalStale
+    (bin_unavailable)+ EXPIRED,不留 PENDING、不冒原始錯誤。"""
+    from cmms.domain.inventory.models import InventoryItem
+    from cmms.domain.inventory.service import InventoryError, InventoryService
+    from cmms.domain.work_order.service import ProposalStale
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    await InventoryService(session).add_storage_bin("B-07", actor=alice)
+    await _seed_item(session, alice)
+    p = await svc.propose(
+        operation="update_item", params=_item_params(bin_location="B-07"),
+        proposed_by=Actor.human("eng1"), at=_ts(10),
+    )
+    orig = InventoryService._validate_bin_location
+    calls: list[int] = []
+
+    async def flaky(self, value, *, current=None):
+        calls.append(1)
+        if len(calls) == 1:  # confirm 的前提檢查
+            return await orig(self, value, current=current)
+        raise InventoryError(f"bin_location {value!r} is not a registered storage bin")
+
+    monkeypatch.setattr(InventoryService, "_validate_bin_location", flaky)
+    with pytest.raises(ProposalStale) as ei:
+        await svc.confirm(pending_token=p.pending_token, confirmer=alice, at=_ts(10, 5))
+    assert ei.value.reason == "bin_unavailable"
+    assert len(calls) == 3  # 檢查 → 執行(失敗)→ 失敗後重驗
+    await _assert_expired_stale(session, p.pending_token, "bin_unavailable", "ES900")
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as fresh:
+        item = await fresh.get(InventoryItem, "ES900")
+        assert item.name == "Seal" and item.bin_location is None
+
+
+async def test_confirm_update_item_execute_error_not_stale_keeps_pending(
+    session, monkeypatch
+) -> None:
+    """執行失敗但重驗前提仍成立(非前提失效)→ 維持原錯誤、提案留 PENDING(不誤標 EXPIRED)。"""
+    from cmms.domain.inventory.service import InventoryError, InventoryService
+    from cmms.domain.work_order.models import PendingProposal
+    from cmms.domain.work_order.service import ProposalStale
+
+    svc = WorkOrderService(session)
+    alice = await _seed_admin(session)
+    await _seed_item(session, alice)
+    p = await svc.propose(
+        operation="update_item", params=_item_params(), proposed_by=Actor.human("eng1"),
+        at=_ts(10),
+    )
+
+    async def boom(self, *a, **k):
+        raise InventoryError("simulated write failure")
+
+    token = p.pending_token  # 失敗回滾後 ORM 物件已過期,先取值
+    monkeypatch.setattr(InventoryService, "_update_item_impl", boom)
+    with pytest.raises(WorkOrderError, match="simulated write failure") as ei:
+        await svc.confirm(pending_token=token, confirmer=alice, at=_ts(10, 5))
+    assert not isinstance(ei.value, ProposalStale)
+    async with async_sessionmaker(session.bind, expire_on_commit=False)() as fresh:
+        assert (await fresh.get(PendingProposal, token)).status == "PENDING"
+
+
 async def test_onbox_open_and_idempotent(session) -> None:
     svc = WorkOrderService(session)
     wo = await svc.open_reactive_work_order_onbox(
